@@ -279,6 +279,12 @@ func (m mainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, keys.DiffPageDown):
 			m.diffViewer.ScrollDown(m.diffViewer.Height())
 			return m, tea.Batch(cmds...)
+		case key.Matches(msg, keys.DiffTop):
+			m.diffViewer.ScrollTop()
+			return m, tea.Batch(cmds...)
+		case key.Matches(msg, keys.DiffBottom):
+			m.diffViewer.ScrollBottom()
+			return m, tea.Batch(cmds...)
 		case key.Matches(msg, keys.Quit):
 			return m, tea.Quit
 		case msg.Key().Code == tea.KeyEscape:

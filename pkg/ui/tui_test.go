@@ -662,6 +662,63 @@ func TestDiffScrollKeysDoNotDisturbFileTree(t *testing.T) {
 	}
 }
 
+// Home/End must jump the diff viewport to the very top/bottom regardless of
+// which panel is active, without disturbing the file-tree cursor.
+func TestHomeEndScrollDiffToEdges(t *testing.T) {
+	cases := []struct {
+		name   string
+		key    tea.Key
+		bottom bool
+	}{
+		{"end", tea.Key{Code: tea.KeyEnd}, true},
+		{"home", tea.Key{Code: tea.KeyHome}, false},
+	}
+	for _, tc := range cases {
+		for _, panel := range []Panel{FileTreePanel, DiffViewerPanel} {
+			t.Run(tc.name+"/panel="+panelName(panel), func(t *testing.T) {
+				m := newTestMainModel(t)
+				m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 160, Height: 40})
+				m.activePanel = panel
+				m.diffViewer.SetContent(strings.Repeat("line\n", 500))
+				if !tc.bottom {
+					// Start at the bottom so Home has somewhere to go.
+					m.diffViewer.ScrollBottom()
+					if m.diffViewer.YOffset() == 0 {
+						t.Fatalf("precondition: expected YOffset>0 after ScrollBottom")
+					}
+				}
+				before := m.fileTree.CurrNodePath()
+
+				updated := updateMainModel(t, m, tea.KeyPressMsg(tc.key))
+
+				if got := updated.fileTree.CurrNodePath(); got != before {
+					t.Fatalf("expected filetree cursor to stay on %q, got %q", before, got)
+				}
+				if updated.activePanel != panel {
+					t.Fatalf(
+						"expected active panel to remain %v, got %v",
+						panel,
+						updated.activePanel,
+					)
+				}
+				off := updated.diffViewer.YOffset()
+				if tc.bottom {
+					maxOff := updated.diffViewer.TotalLineCount() - updated.diffViewer.Height()
+					if off != maxOff {
+						t.Fatalf(
+							"expected End to scroll to bottom (YOffset=%d), got %d",
+							maxOff,
+							off,
+						)
+					}
+				} else if off != 0 {
+					t.Fatalf("expected Home to scroll to top (YOffset=0), got %d", off)
+				}
+			})
+		}
+	}
+}
+
 // Pressing pgdown with the file tree active must advance the diff viewport.
 // This is the end-to-end signal that the new keys are routed to the diff pane
 // instead of being swallowed by the file tree.

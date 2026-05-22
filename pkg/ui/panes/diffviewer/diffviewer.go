@@ -592,6 +592,12 @@ func (m *Model) YOffset() int {
 	return m.vp.YOffset()
 }
 
+// TotalLineCount returns the number of content lines currently loaded into the
+// viewport.
+func (m *Model) TotalLineCount() int {
+	return m.vp.TotalLineCount()
+}
+
 // StartSelection begins a new selection anchored at p. Derives colBand from
 // p.Col, m.gutterCol, and the detected per-side content columns. The band
 // excludes the leading border, line numbers, and post-LN border on whichever

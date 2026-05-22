@@ -18,6 +18,8 @@ type KeyMap struct {
 	DiffLineDown    key.Binding
 	DiffPageUp      key.Binding
 	DiffPageDown    key.Binding
+	DiffTop         key.Binding
+	DiffBottom      key.Binding
 	ToggleFileTree  key.Binding
 	Search          key.Binding
 	Quit            key.Binding
@@ -92,6 +94,14 @@ var keys = &KeyMap{
 		key.WithKeys("pgdown"),
 		key.WithHelp("PgDn", "diff page down"),
 	),
+	DiffTop: key.NewBinding(
+		key.WithKeys("home"),
+		key.WithHelp("Home", "diff top"),
+	),
+	DiffBottom: key.NewBinding(
+		key.WithKeys("end"),
+		key.WithHelp("End", "diff bottom"),
+	),
 	ToggleFileTree: key.NewBinding(
 		key.WithKeys("e"),
 		key.WithHelp("e", "toggle file tree"),
@@ -153,6 +163,8 @@ func KeyGroups() [][]key.Binding {
 		keys.DiffLineDown,
 		keys.DiffPageUp,
 		keys.DiffPageDown,
+		keys.DiffTop,
+		keys.DiffBottom,
 	}, {
 		keys.ToggleFileTree,
 		keys.Search,
