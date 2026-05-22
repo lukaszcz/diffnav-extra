@@ -15,6 +15,14 @@ fail=0
 
 # Parse the output line by line, checking per-package coverage.
 while IFS= read -r line; do
+  # Packages with no test files are a coverage gap
+  if echo "$line" | grep -q '\[no test files\]'; then
+    pkg=$(echo "$line" | awk '{print $2}')
+    echo "FAIL: $pkg has no test files"
+    fail=1
+    continue
+  fi
+
   # Skip lines without coverage info
   if ! echo "$line" | grep -q 'coverage:'; then
     continue
