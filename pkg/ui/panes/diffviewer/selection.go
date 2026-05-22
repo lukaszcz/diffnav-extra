@@ -279,6 +279,14 @@ func stripContinuationPrefix(row string) string {
 	return row
 }
 
+// Function vars allow tests to inject panicking implementations to exercise
+// defer/recover safety nets in refreshColumnDetection and applyHighlight.
+var (
+	detectGutterColFunc       = detectGutterCol
+	detectSideContentColsFunc = detectSideContentCols
+	spliceReverseFunc         = spliceReverse
+)
+
 // visualColumnsOf walks s rune-by-rune accumulating runewidth.RuneWidth and
 // returns the visual column at which each occurrence of r begins.
 //

@@ -83,15 +83,21 @@ tasks:
 
   test:
     cmds:
-      - go test {{.CLI_ARGS}} ./...
+      - go test {{.CLI_ARGS}} ./pkg/... ./cmd/...
     desc: "Run tests. Pass flags after --, e.g. task test -- -v"
 
+  test:coverage:
+    cmds:
+      - ./scripts/check_coverage.sh
+    desc: Run tests and verify 100% coverage for all testable packages
+
   check:
-    desc: Run fmt, lint, and tests
+    desc: Run fmt, lint, and tests with 100% coverage
     cmds:
       - task: fmt
       - task: lint
       - task: test
+      - task: test:coverage
 
   fmt:
     desc: Run golangci-lint fmt

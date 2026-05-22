@@ -3,7 +3,6 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -89,22 +88,8 @@ func getConfigFilePath() string {
 		}
 	}
 
-	// On macOS, check XDG_CONFIG_HOME first (if user explicitly set it),
-	// then fall back to ~/.config (common for CLI tools).
-	// os.UserConfigDir() already handles this for Linux.
-	if runtime.GOOS == "darwin" {
-		if xdgConfigDir := os.Getenv("XDG_CONFIG_HOME"); xdgConfigDir != "" {
-			configDirs = append(configDirs, xdgConfigDir)
-		}
-		if home := os.Getenv("HOME"); home != "" {
-			configDirs = append(configDirs, filepath.Join(home, ".config"))
-		}
-	}
-
-	// Standard OS-specific config directory.
-	if configDir, err := os.UserConfigDir(); err == nil {
-		configDirs = append(configDirs, configDir)
-	}
+	// Platform-specific config directories (macOS, Linux, etc.).
+	configDirs = append(configDirs, platformConfigDirs()...)
 
 	// Return the first config file that exists.
 	for _, dir := range configDirs {

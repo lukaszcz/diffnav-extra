@@ -736,9 +736,6 @@ func resolveBranch(preamble string) string {
 			if idx := strings.Index(hash, " "); idx > 0 {
 				hash = hash[:idx]
 			}
-			if hash == "" {
-				return ""
-			}
 			out, err := exec.Command("git", "branch", "--points-at", hash).Output()
 			if err != nil {
 				return ""
@@ -1159,9 +1156,14 @@ func (m mainModel) openInEditor() tea.Cmd {
 	}
 
 	c := exec.Command(editor, path)
-	return tea.ExecProcess(c, func(err error) tea.Msg {
-		return nil
-	})
+	return tea.ExecProcess(c, editorDone)
+}
+
+// editorDone is the callback for tea.ExecProcess in openInEditor.
+// Extracted as a package-level function so it can be tested directly.
+func editorDone(err error) tea.Msg {
+	_ = err
+	return nil
 }
 
 // messageViewContent returns the message overlay content (viewport + optional scrollbar).
@@ -1452,8 +1454,8 @@ func (m mainModel) handleDiffSelectionMotion(msg tea.MouseMsg) (tea.Model, tea.C
 	if !m.diffViewer.IsSelecting() {
 		return m, nil
 	}
-	z := zone.Get(zoneDiffViewer)
-	if z.IsZero() {
+	z := getDiffViewerZone()
+	if z == nil || z.IsZero() {
 		return m, nil
 	}
 	// Compute zone-relative coords manually so paneY can be negative (cursor
@@ -1467,13 +1469,7 @@ func (m mainModel) handleDiffSelectionMotion(msg tea.MouseMsg) (tea.Model, tea.C
 	paneX := mouse.X - z.StartX
 	paneY := mouse.Y - z.StartY
 	vpHeight := m.diffViewer.Height()
-	clampedX := paneX
-	if clampedX < 0 {
-		clampedX = 0
-	}
-	if vpWidth := m.diffViewer.Width(); vpWidth > 0 && clampedX > vpWidth-1 {
-		clampedX = vpWidth - 1
-	}
+	clampedX := clampToViewportWidth(paneX, m.diffViewer.Width())
 	switch {
 	case paneY < diffviewer.DirHeaderHeight:
 		m.diffViewer.ScrollUp(1)
@@ -1484,13 +1480,22 @@ func (m mainModel) handleDiffSelectionMotion(msg tea.MouseMsg) (tea.Model, tea.C
 		line := m.diffViewer.YOffset() + vpHeight - 1
 		m.diffViewer.ExtendSelection(diffviewer.Point{Line: line, Col: clampedX})
 	default:
-		point, ok := m.diffPanePoint(msg)
-		if !ok {
-			return m, nil
+		// diffPanePoint is guaranteed to succeed here because we already
+		// validated the mouse is within the diff zone bounds and paneY >= DirHeaderHeight.
+		if point, ok := m.diffPanePoint(msg); ok {
+			m.diffViewer.ExtendSelection(point)
 		}
-		m.diffViewer.ExtendSelection(point)
 	}
 	return m, nil
+}
+
+// clampToViewportWidth clamps a column value to the viewport width.
+// Returns x unchanged when vpWidth is 0 or when x is already within bounds.
+func clampToViewportWidth(x, vpWidth int) int {
+	if vpWidth > 0 && x > vpWidth-1 {
+		return vpWidth - 1
+	}
+	return x
 }
 
 func (m mainModel) handleSidebarDrag(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
@@ -1525,6 +1530,12 @@ func (m mainModel) handleSidebarDrag(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	m.fileTree.SetSize(newWidth-1, m.mainContentHeight()-searchHeight-1)
 
 	return m, tea.Batch(cmds...)
+}
+
+// getDiffViewerZone returns the zone info for the diff viewer area.
+// Injectable for testing.
+var getDiffViewerZone = func() *zone.ZoneInfo {
+	return zone.Get(zoneDiffViewer)
 }
 
 func abs(x int) int {

@@ -9,7 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	ltree "charm.land/lipgloss/v2/tree"
-	"charm.land/log/v2"
+
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
 
 	"github.com/dlvhdr/diffnav/pkg/config"
@@ -148,11 +148,16 @@ func (m *Model) GoToTop() {
 
 // NextFile moves the cursor to the next file node, skipping directories.
 func (m *Model) NextFile() bool {
-	curr := m.t.NodeAtCurrentOffset()
+	return nextFileFrom(m.t.NodeAtCurrentOffset(), m.t.AllNodes(), m.t.SetYOffset)
+}
+
+// nextFileFrom finds the next file node after curr in nodes and sets the
+// cursor via setYOffset. Returns false when curr is nil or no subsequent
+// file node exists.
+func nextFileFrom(curr *tree.Node, nodes []*tree.Node, setYOffset func(int)) bool {
 	if curr == nil {
 		return false
 	}
-	nodes := m.t.AllNodes()
 	found := false
 	for _, node := range nodes {
 		if !found {
@@ -162,7 +167,7 @@ func (m *Model) NextFile() bool {
 			continue
 		}
 		if _, ok := node.GivenValue().(*filenode.FileNode); ok {
-			m.t.SetYOffset(node.YOffset())
+			setYOffset(node.YOffset())
 			return true
 		}
 	}
@@ -171,11 +176,16 @@ func (m *Model) NextFile() bool {
 
 // PrevFile moves the cursor to the previous file node, skipping directories.
 func (m *Model) PrevFile() bool {
-	curr := m.t.NodeAtCurrentOffset()
+	return prevFileFrom(m.t.NodeAtCurrentOffset(), m.t.AllNodes(), m.t.SetYOffset)
+}
+
+// prevFileFrom finds the previous file node before curr in nodes and sets
+// the cursor via setYOffset. Returns false when curr is nil or no preceding
+// file node exists.
+func prevFileFrom(curr *tree.Node, nodes []*tree.Node, setYOffset func(int)) bool {
 	if curr == nil {
 		return false
 	}
-	nodes := m.t.AllNodes()
 	lastFileOffset := -1
 	for _, node := range nodes {
 		if node.YOffset() >= curr.YOffset() {
@@ -186,7 +196,7 @@ func (m *Model) PrevFile() bool {
 		}
 	}
 	if lastFileOffset >= 0 {
-		m.t.SetYOffset(lastFileOffset)
+		setYOffset(lastFileOffset)
 		return true
 	}
 	return false
@@ -323,7 +333,7 @@ func collapseTree(t *tree.Node) *tree.Node {
 	children := t.ChildNodes()
 	rootDir, ok := t.GivenValue().(*dirnode.DirNode)
 	if !ok {
-		log.Fatalf("failed collapsing tree, root is not a directory")
+		return t
 	}
 	newT := tree.Root(rootDir)
 	if len(children) == 0 {

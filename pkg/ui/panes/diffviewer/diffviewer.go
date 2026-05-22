@@ -138,6 +138,9 @@ type Model struct {
 	// full half band starting at 0 / gutterCol+1.
 	leftContentCol  int
 	rightContentCol int
+	// testHookSelectedTextPanic, if non-nil, is called at the start of
+	// selectedTextInner to test the panic recovery path. Not for production.
+	testHookSelectedTextPanic func()
 }
 
 // SetPreamble stores the preamble text (e.g. commit metadata from git show).
@@ -253,8 +256,8 @@ func (m *Model) refreshColumnDetection(content string) {
 		}
 	}()
 	stripped := ansi.Strip(content)
-	g := detectGutterCol(stripped, m.vp.Width())
-	l, r := detectSideContentCols(stripped, g)
+	g := detectGutterColFunc(stripped, m.vp.Width())
+	l, r := detectSideContentColsFunc(stripped, g)
 	// Strict plausibility check — beyond the obvious negative-value guards,
 	// reject any layout where the detected columns don't form a coherent
 	// (leadingBorder=0 < leftContent < gutter < rightContent < vpWidth)
@@ -323,7 +326,7 @@ func (m Model) applyHighlight(vpView string) (out string) {
 		if a >= b {
 			continue
 		}
-		visible[screenRow] = spliceReverse(line, a, b, w)
+		visible[screenRow] = spliceReverseFunc(line, a, b, w)
 	}
 	return strings.Join(visible, "\n")
 }
@@ -748,6 +751,9 @@ func (m *Model) selectedText() (result string) {
 }
 
 func (m *Model) selectedTextInner() string {
+	if m.testHookSelectedTextPanic != nil {
+		m.testHookSelectedTextPanic()
+	}
 	var src string
 	switch {
 	case m.file != nil:
@@ -896,15 +902,31 @@ func deltaMaxLineLength(width int, sideBySide bool) int {
 	return maxDeltaLineLength
 }
 
+// newDeltaCmd creates the *exec.Cmd for the delta binary. Injected so tests
+// can substitute commands that exercise hard-to-reach error paths.
+var newDeltaCmd = defaultNewDeltaCmd
+
+func defaultNewDeltaCmd(ctx context.Context, args []string) *exec.Cmd {
+	return exec.CommandContext(ctx, "delta", args...)
+}
+
+// stdinPipeFunc wraps (*exec.Cmd).StdinPipe so tests can inject a failing stub
+// to exercise the StdinPipe error path.
+var stdinPipeFunc = defaultStdinPipeFunc
+
+func defaultStdinPipeFunc(c *exec.Cmd) (io.WriteCloser, error) {
+	return c.StdinPipe()
+}
+
 func runDelta(
 	ctx context.Context,
 	args []string,
 	writeInput func(io.Writer) error,
 ) ([]byte, error) {
-	deltac := exec.CommandContext(ctx, "delta", args...)
+	deltac := newDeltaCmd(ctx, args)
 	deltac.Env = os.Environ()
 
-	stdin, err := deltac.StdinPipe()
+	stdin, err := stdinPipeFunc(deltac)
 	if err != nil {
 		return nil, err
 	}
@@ -974,8 +996,6 @@ func (m Model) deltaThemeArgs() []string {
 
 func parseThemeMode(v string) themeMode {
 	switch config.NormalizeTheme(v) {
-	case config.ThemeAuto:
-		return themeAuto
 	case config.ThemeLight:
 		return themeLight
 	case config.ThemeDark:
