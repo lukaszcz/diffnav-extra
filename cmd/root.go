@@ -140,22 +140,18 @@ func parseFlags(
 // setupLogging configures the log package based on the DEBUG environment
 // variable. When DEBUG is "true", logs are written to debug.log with debug
 // level. Otherwise, only fatal-level messages go to stderr.
-func setupLogging() {
+// When debug mode is active, the returned cleanup function closes the log
+// file; the caller must defer it so the file stays open for the entire
+// program lifetime.
+func setupLogging() func() {
 	if os.Getenv("DEBUG") == "true" {
 		logFile, fileErr := os.OpenFile("debug.log",
 			os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
 		if fileErr != nil {
 			fmt.Println("Error opening debug.log:", fileErr)
 			exitFunc(1)
-			return
+			return func() {}
 		}
-		defer func() {
-			if err := closeFile(logFile); err != nil {
-				log.Error("failed closing log file", "err", err)
-				exitFunc(1)
-				return
-			}
-		}()
 
 		log.SetOutput(logFile)
 		log.SetTimeFormat(time.Kitchen)
@@ -168,13 +164,22 @@ func setupLogging() {
 		if err != nil {
 			fmt.Println("Error getting current working dir", err)
 			exitFunc(1)
-			return
+			return func() {}
 		}
 		log.Debug("🚀 Starting diffnav", "logFile",
 			wd+string(os.PathSeparator)+logFile.Name())
+
+		return func() {
+			if err := closeFile(logFile); err != nil {
+				log.Error("failed closing log file", "err", err)
+				exitFunc(1)
+				return
+			}
+		}
 	} else {
 		log.SetOutput(os.Stderr)
 		log.SetLevel(log.FatalLevel)
+		return func() {}
 	}
 }
 
@@ -331,7 +336,7 @@ func init() {
 
 		zoneNewGlobal()
 
-		setupLogging()
+		defer setupLogging()()
 
 		input := readInput(watchFlag, watchCmdStr, helpFlag)
 

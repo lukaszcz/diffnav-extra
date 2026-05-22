@@ -247,7 +247,8 @@ func TestBuildConfigWatch(t *testing.T) {
 
 func TestSetupLoggingNonDebug(t *testing.T) {
 	t.Setenv("DEBUG", "false")
-	setupLogging()
+	cleanup := setupLogging()
+	cleanup()
 	// Just verify it doesn't panic.
 }
 
@@ -267,7 +268,8 @@ func TestSetupLoggingDebugMode(t *testing.T) {
 	exitFunc = func(int) { called = true }
 	defer func() { exitFunc = origExit }()
 
-	setupLogging()
+	cleanup := setupLogging()
+	cleanup()
 
 	// In debug mode with successful file creation, it should NOT call exitFunc.
 	if called {
@@ -297,7 +299,8 @@ func TestSetupLoggingDebugFileError(t *testing.T) {
 	}
 	defer os.Chdir(origDir)
 
-	setupLogging()
+	cleanup := setupLogging()
+	cleanup()
 
 	if !exitCalled {
 		t.Error("expected exitFunc to be called when debug.log cannot be opened")
@@ -827,7 +830,8 @@ func TestSetupLoggingGetwdError(t *testing.T) {
 	getwd = func() (string, error) { return "", fmt.Errorf("getwd failed") }
 	defer func() { getwd = origGetwd }()
 
-	setupLogging()
+	cleanup := setupLogging()
+	cleanup()
 
 	if !exitCalled {
 		t.Error("expected exitFunc to be called when getwd fails")
@@ -846,8 +850,9 @@ func TestSetupLoggingDebugCloseError(t *testing.T) {
 	defer os.Chdir(origDir)
 
 	t.Setenv("DEBUG", "true")
-	setupLogging()
-	// The defer will run when the function returns.
+	cleanup := setupLogging()
+	cleanup()
+	// The cleanup function closes the log file.
 }
 
 type errorWriterBuilder struct{}
@@ -1171,7 +1176,8 @@ func TestSetupLoggingCloseFileError(t *testing.T) {
 	// triggers the log.Fatal branch.
 	defer func() { recover() }() // log.Fatal may panic in tests
 
-	setupLogging()
-	// The defer in setupLogging will fire when this test returns, or when
-	// we explicitly cause it to fire.
+	cleanup := setupLogging()
+	cleanup()
+	// The cleanup function closes the log file, triggering the error path when
+	// closeFile returns an error.
 }
