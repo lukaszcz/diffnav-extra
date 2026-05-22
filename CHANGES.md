@@ -10,4 +10,5 @@ Changes with respect to upstream DiffNav:
 - remember scroll position in the diff view window,
 - toggle directories on file tree icon click,
 - fix blank diff panes caused by reusing incomplete cache entries after rapid file switching,
-- widen the help window on narrow terminals so all columns stay visible.
+- widen the help window on narrow terminals so all columns stay visible,
+- 100% test coverage.

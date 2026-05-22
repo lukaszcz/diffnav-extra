@@ -42,6 +42,7 @@ Always invoke `task` through `devbox run` so the pinned `go`, `golangci-lint`, a
 - **IMPORTANT**: For every bug found, add a regression test that fails because of the bug, then fix the bug and ensure the test passes.
 - Avoid brittle tests. Test user workflows, not implementation details.
 - Test only main app Go code, not build/install scripts, `Taskfile.yml` commands or config file content. Do not test exact help messages.
+- Maintain 100% test coverage, no exemptions.
 
 ## Commit Guidelines
 
