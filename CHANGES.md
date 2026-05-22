@@ -9,4 +9,5 @@ Changes with respect to upstream DiffNav:
 - `Ctrl+↑/↓` scroll the diff by one line, `PgUp`/`PgDn` scroll by a page, `Home`/`End` scroll to the top/bottom of the diff view window,
 - remember scroll position in the diff view window,
 - toggle directories on file tree icon click,
-- fix blank diff panes caused by reusing incomplete cache entries after rapid file switching.
+- fix blank diff panes caused by reusing incomplete cache entries after rapid file switching,
+- widen the help window on narrow terminals so all columns stay visible.
