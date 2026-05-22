@@ -1544,7 +1544,6 @@ func (m mainModel) moveToFile(movement int) (mainModel, tea.Cmd) {
 
 	node := m.fileTree.GetCurrNode()
 	m, cmd = m.setNodeDiff(node)
-	m.diffViewer.GoToTop()
 
 	return m, cmd
 }
@@ -1573,7 +1572,6 @@ func (m mainModel) moveCursor(move movement) (mainModel, tea.Cmd) {
 
 	node := m.fileTree.GetCurrNode()
 	m, cmd = m.setNodeDiff(node)
-	m.diffViewer.GoToTop()
 
 	return m, cmd
 }

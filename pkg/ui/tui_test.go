@@ -749,6 +749,120 @@ func TestMessageOverlayPageKeysScrollOverlay(t *testing.T) {
 	}
 }
 
+// drainCmds runs cmd and every command it (transitively) produces, feeding the
+// resulting messages back through Update. This lets a test pump the async delta
+// render pipeline to completion. BatchMsg fan-out is flattened.
+func drainCmds(t *testing.T, m mainModel, cmd tea.Cmd) mainModel {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	pending := []tea.Cmd{cmd}
+	for len(pending) > 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out draining commands")
+		}
+		c := pending[0]
+		pending = pending[1:]
+		if c == nil {
+			continue
+		}
+		msg := c()
+		if msg == nil {
+			continue
+		}
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			pending = append(pending, batch...)
+			continue
+		}
+		var next tea.Cmd
+		m = updateAndCmd(t, m, msg, &next)
+		pending = append(pending, next)
+	}
+	return m
+}
+
+func updateAndCmd(t *testing.T, m mainModel, msg tea.Msg, out *tea.Cmd) mainModel {
+	t.Helper()
+	updated, cmd := m.Update(msg)
+	result, ok := updated.(mainModel)
+	if !ok {
+		t.Fatalf("unexpected model type %T", updated)
+	}
+	*out = cmd
+	return result
+}
+
+// Selecting a file remembers that file's own scroll position: returning to it
+// restores where the user left it, while a freshly visited file opens at the
+// top. This exercises the real delta render pipeline through keyboard
+// navigation (the path the user reported).
+func TestFileNavigationRemembersScrollPerFile(t *testing.T) {
+	if _, err := exec.LookPath("delta"); err != nil {
+		t.Skip("delta not installed, skipping end-to-end test")
+	}
+	m := newTestMainModel(t)
+	isDark := true
+	m.isDarkBackground = &isDark
+	m.diffViewer.SetDarkBackground(true)
+	m.fileTree.SetDarkBackground(true)
+	// Tight window so the large file's diff overflows and can scroll.
+	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 160, Height: 20})
+	m = drainCmds(t, m, m.fetchFileTree)
+	m.activePanel = FileTreePanel
+
+	// Select the large file (yarn.lock) and render it.
+	m.fileTree.SetCursorByPath("yarn.lock")
+	var cmd tea.Cmd
+	m, cmd = m.setNodeDiff(m.fileTree.GetCurrNode())
+	m = drainCmds(t, m, cmd)
+	if m.fileTree.CurrNodePath() != "yarn.lock" {
+		t.Fatalf("setup: expected to be on yarn.lock, got %q", m.fileTree.CurrNodePath())
+	}
+
+	// Scroll the large file's diff down.
+	m.diffViewer.ScrollDown(100)
+	want := m.diffViewer.YOffset()
+	if want == 0 {
+		t.Fatal("precondition: expected yarn.lock diff to scroll past the top")
+	}
+
+	// Navigate to the other file via the keyboard: it must open at the top.
+	m = drainCmds(t, m, keyCmd(t, &m, tea.Key{Text: "p", Code: 'p'}))
+	if m.fileTree.CurrNodePath() == "yarn.lock" {
+		t.Fatalf(
+			"setup: expected prev-file to leave yarn.lock, still on %q",
+			m.fileTree.CurrNodePath(),
+		)
+	}
+	if got := m.diffViewer.YOffset(); got != 0 {
+		t.Fatalf("expected a freshly visited file to open at the top, got %d", got)
+	}
+
+	// Navigate back to the large file: its scroll must be restored.
+	m = drainCmds(t, m, keyCmd(t, &m, tea.Key{Text: "n", Code: 'n'}))
+	if m.fileTree.CurrNodePath() != "yarn.lock" {
+		t.Fatalf(
+			"setup: expected next-file to return to yarn.lock, got %q",
+			m.fileTree.CurrNodePath(),
+		)
+	}
+	if got := m.diffViewer.YOffset(); got != want {
+		t.Fatalf("expected yarn.lock scroll %d to be restored, got %d", want, got)
+	}
+}
+
+// keyCmd dispatches a key press through Update and returns the resulting
+// command, updating *m in place.
+func keyCmd(t *testing.T, m *mainModel, k tea.Key) tea.Cmd {
+	t.Helper()
+	updated, cmd := m.Update(tea.KeyPressMsg(k))
+	result, ok := updated.(mainModel)
+	if !ok {
+		t.Fatalf("unexpected model type %T", updated)
+	}
+	*m = result
+	return cmd
+}
+
 func diffViewerHasContent(m mainModel) bool {
 	// The viewport reports a height of 1 even when empty; rendered content
 	// always contains at least one diff-related line once delta resolves.

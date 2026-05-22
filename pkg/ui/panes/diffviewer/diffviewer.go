@@ -55,6 +55,36 @@ func cacheReady(node *cachedNode) bool {
 	return node != nil && node.ready
 }
 
+// currentKey returns the cache/scroll key of the node currently shown in the
+// viewport (a file or a directory), or false when nothing is selected.
+func (m *Model) currentKey() (string, bool) {
+	switch {
+	case m.file != nil:
+		return cacheKey(m.file.path, m.sideBySide), true
+	case m.dir != nil:
+		return cacheKey(m.dir.path, m.sideBySide), true
+	default:
+		return "", false
+	}
+}
+
+// rememberScroll snapshots the viewport's current scroll position for the
+// node being navigated away from. Call this before swapping the selected node.
+func (m *Model) rememberScroll() {
+	if key, ok := m.currentKey(); ok {
+		m.scrollOffsets[key] = m.vp.YOffset()
+	}
+}
+
+// restoreScroll positions the viewport at the node's remembered offset (the
+// top if never visited). The viewport clamps stale offsets to the current
+// content, so a diff that shrank — e.g. after a watch refresh — lands at the
+// bottom rather than out of bounds. Must run after the content is set so the
+// clamp sees the new line count.
+func (m *Model) restoreScroll(key string) {
+	m.vp.SetYOffset(m.scrollOffsets[key])
+}
+
 type deltaRenderer struct {
 	run func(context.Context, []string, func(io.Writer) error) ([]byte, error)
 }
@@ -80,6 +110,12 @@ type Model struct {
 	file  *cachedNode
 	dir   *cachedNode
 	cache nodeCache
+	// scrollOffsets remembers the diff viewport's vertical scroll position per
+	// node (keyed identically to cache). Switching files/dirs restores the
+	// node's last position; first-time visits default to the top. Offsets are
+	// kept across cache invalidation (resize, theme, watch refresh) and the
+	// viewport clamps any stale value to the new content's range.
+	scrollOffsets map[string]int
 	// renderer is injectable so tests can assert render lifecycle behavior
 	// without launching the external delta binary.
 	renderer deltaRenderer
@@ -122,6 +158,7 @@ func New(sideBySide bool, theme string) Model {
 		vp:              viewport.Model{},
 		sideBySide:      sideBySide,
 		cache:           map[string]*cachedNode{},
+		scrollOffsets:   map[string]int{},
 		renderer:        defaultDeltaRenderer(),
 		themeMode:       parseThemeMode(theme),
 		gutterCol:       -1,
@@ -166,6 +203,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		m.vp.SetContent(diff)
 		m.refreshColumnDetection(diff)
+		// The renderID guard above means this content belongs to the node the
+		// user is currently viewing, so restore its remembered scroll position
+		// now that the line count (and thus the clamp range) is known.
+		m.restoreScroll(msg.cacheKey)
 	}
 
 	vp, vpCmd := m.vp.Update(msg)
@@ -292,6 +333,8 @@ func (m *Model) SetSize(width, height int) tea.Cmd {
 	m.Common.Height = height
 	m.vp.SetWidth(m.contentWidth())
 	m.vp.SetHeight(m.Common.Height - DirHeaderHeight)
+	// ClearCache snapshots the live scroll position before invalidating the
+	// render, so the reflowed content lands at the same place (clamped to fit).
 	m.ClearCache()
 	return m.diff()
 }
@@ -341,6 +384,7 @@ func (m *Model) diff() tea.Cmd {
 			m.file = cached
 			m.vp.SetContent(cached.diff)
 			m.refreshColumnDetection(cached.diff)
+			m.restoreScroll(key)
 			return nil
 		}
 		node := &cachedNode{
@@ -368,6 +412,7 @@ func (m *Model) diff() tea.Cmd {
 			m.dir = cached
 			m.vp.SetContent(cached.diff)
 			m.refreshColumnDetection(cached.diff)
+			m.restoreScroll(key)
 			return nil
 		}
 		node := &cachedNode{
@@ -443,6 +488,7 @@ func (m Model) dirHeaderView() string {
 }
 
 func (m Model) SetFilePatch(file *gitdiff.File) (Model, tea.Cmd) {
+	m.rememberScroll()
 	m.sel = selection{}
 	m.dir = nil
 
@@ -453,6 +499,7 @@ func (m Model) SetFilePatch(file *gitdiff.File) (Model, tea.Cmd) {
 		m.file = cached
 		m.vp.SetContent(cached.diff)
 		m.refreshColumnDetection(cached.diff)
+		m.restoreScroll(key)
 		return m, nil
 	}
 
@@ -472,6 +519,7 @@ func (m Model) SetFilePatch(file *gitdiff.File) (Model, tea.Cmd) {
 }
 
 func (m Model) SetDirPatch(dirPath string, files []*gitdiff.File) (Model, tea.Cmd) {
+	m.rememberScroll()
 	m.sel = selection{}
 	m.file = nil
 
@@ -481,6 +529,7 @@ func (m Model) SetDirPatch(dirPath string, files []*gitdiff.File) (Model, tea.Cm
 		m.dir = cached
 		m.vp.SetContent(cached.diff)
 		m.refreshColumnDetection(cached.diff)
+		m.restoreScroll(key)
 		return m, nil
 	}
 
@@ -501,12 +550,12 @@ func (m Model) SetDirPatch(dirPath string, files []*gitdiff.File) (Model, tea.Cm
 	return m, cmd
 }
 
-func (m *Model) GoToTop() {
-	m.vp.GotoTop()
-}
-
 // SetSideBySide updates the diff view mode and re-renders.
 func (m *Model) SetSideBySide(sideBySide bool) tea.Cmd {
+	// Snapshot the current layout's scroll before the key changes (the cache
+	// key carries a side-by-side suffix), so toggling back returns to where
+	// the user left each layout.
+	m.rememberScroll()
 	m.sideBySide = sideBySide
 	return m.diff()
 }
@@ -897,6 +946,7 @@ func (m *Model) SetDarkBackground(isDark bool) tea.Cmd {
 		return nil
 	}
 	m.isDarkBackground = &isDark
+	m.rememberScroll()
 	m.cache = make(nodeCache)
 	return m.diff()
 }
@@ -968,6 +1018,11 @@ type diffContentMsg struct {
 }
 
 func (m *Model) ClearCache() {
+	// Snapshot the current node's scroll before discarding renders so the
+	// position survives the re-render (resize, watch refresh). Remembered
+	// offsets intentionally outlive the cache; restoreScroll clamps any value
+	// that no longer fits the new content.
+	m.rememberScroll()
 	m.cancelPendingRender()
 	m.cache = make(nodeCache)
 }
