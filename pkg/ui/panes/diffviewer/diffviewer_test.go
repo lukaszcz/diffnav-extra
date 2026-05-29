@@ -2329,10 +2329,11 @@ func TestRunDelta_WaitErrNoStderr(t *testing.T) {
 
 // runDelta: stdin pipe write error from writeInput.
 func TestRunDelta_StdinWriteError(t *testing.T) {
-	if !deltaAvailable() {
-		t.Skip("delta not installed, skipping runDelta test")
+	origNewCmd := newDeltaCmd
+	defer func() { newDeltaCmd = origNewCmd }()
+	newDeltaCmd = func(ctx context.Context, args []string) *exec.Cmd {
+		return exec.CommandContext(ctx, "cat")
 	}
-	// delta is available in the test environment; provide bad input writer.
 	_, err := runDelta(context.Background(), []string{}, func(w io.Writer) error {
 		return fmt.Errorf("stdin write failed")
 	})
@@ -2343,10 +2344,12 @@ func TestRunDelta_StdinWriteError(t *testing.T) {
 
 // runDelta: successful invocation produces output.
 func TestRunDelta_Success(t *testing.T) {
-	if !deltaAvailable() {
-		t.Skip("delta not installed, skipping runDelta test")
+	origNewCmd := newDeltaCmd
+	defer func() { newDeltaCmd = origNewCmd }()
+	newDeltaCmd = func(ctx context.Context, args []string) *exec.Cmd {
+		return exec.CommandContext(ctx, "cat")
 	}
-	out, err := runDelta(context.Background(), []string{"--paging=never"}, func(w io.Writer) error {
+	out, err := runDelta(context.Background(), []string{}, func(w io.Writer) error {
 		_, err := io.WriteString(w, "diff --git a/f b/f\nnew file mode 100644\n")
 		return err
 	})
@@ -2354,7 +2357,7 @@ func TestRunDelta_Success(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(out) == 0 {
-		t.Fatal("expected non-empty output from delta")
+		t.Fatal("expected non-empty output from command")
 	}
 }
 
