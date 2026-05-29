@@ -4106,6 +4106,10 @@ func TestViewRendersWithHiddenFooter(t *testing.T) {
 	if view == "" {
 		t.Fatal("expected non-empty view")
 	}
+	// With hidden footer, the "F1/? help" text should not appear.
+	if strings.Contains(view, "help") {
+		t.Error("expected footer to be hidden but found help text in view")
+	}
 }
 
 func TestViewRendersWithHelpOverlay(t *testing.T) {
