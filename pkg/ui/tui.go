@@ -1490,9 +1490,15 @@ func (m mainModel) handleDiffSelectionMotion(msg tea.MouseMsg) (tea.Model, tea.C
 
 // clampToViewportWidth clamps a column value to the viewport width.
 // Returns x unchanged when vpWidth is 0 or when x is already within bounds.
+// Negative values are clamped to 0.
 func clampToViewportWidth(x, vpWidth int) int {
-	if vpWidth > 0 && x > vpWidth-1 {
-		return vpWidth - 1
+	if vpWidth > 0 {
+		if x > vpWidth-1 {
+			return vpWidth - 1
+		}
+		if x < 0 {
+			return 0
+		}
 	}
 	return x
 }

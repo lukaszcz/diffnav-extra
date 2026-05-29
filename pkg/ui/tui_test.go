@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -515,7 +516,7 @@ func TestFileTreeDirectoryRowClickSelectsWithoutToggling(t *testing.T) {
 				}
 
 				_ = m.View().Content
-				z := zone.Get(zoneFileTree)
+				z := waitForZone(t, zoneFileTree)
 				localY := target.YOffset() - m.fileTree.ViewportYOffset()
 				nameX := target.Depth() + 4
 
@@ -568,7 +569,7 @@ func TestFileTreeDirectoryIconClickSelectsAndToggles(t *testing.T) {
 				}
 
 				_ = m.View().Content
-				z := zone.Get(zoneFileTree)
+				z := waitForZone(t, zoneFileTree)
 				localY := target.YOffset() - m.fileTree.ViewportYOffset()
 				iconX := -1
 				for x := 0; x < m.fileTree.Width(); x++ {
@@ -1992,6 +1993,25 @@ func updateMainModel(t *testing.T, m mainModel, msg tea.Msg) mainModel {
 	return result
 }
 
+// waitForZone polls zone.Get until the zone is registered or the deadline is
+// reached. The bubblezone manager processes zone registrations asynchronously
+// via a background goroutine, so immediate calls to zone.Get() after View()
+// may return nil. This helper ensures tests reliably observe registered zones.
+func waitForZone(t *testing.T, id string) *zone.ZoneInfo {
+	t.Helper()
+	deadline := time.Now().Add(100 * time.Millisecond)
+	for {
+		z := zone.Get(id)
+		if z != nil && !z.IsZero() {
+			return z
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("zone %q not registered after View()", id)
+		}
+		runtime.Gosched()
+	}
+}
+
 // ---------------------------------------------------------------------------
 // scheduleWatchTick tests
 // ---------------------------------------------------------------------------
@@ -3188,10 +3208,7 @@ func TestHandleScrollInDiffViewer(t *testing.T) {
 
 	// Scroll down in the diff viewer zone using handleMouse with a wheel button.
 	// Note: handleMouse routes to handleScroll for wheel events.
-	z := zone.Get(zoneDiffViewer)
-	if z.IsZero() {
-		t.Fatal("zoneDiffViewer not registered after View(); scroll test cannot execute")
-	}
+	z := waitForZone(t, zoneDiffViewer)
 	// The scroll event should be processed without panicking.
 	// YOffset may or may not change depending on whether there is enough
 	// content to scroll and where the viewport is positioned, so we just
@@ -3212,10 +3229,7 @@ func TestHandleScrollInFileTreeZoneLegacy(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneFileTree)
-	if z.IsZero() {
-		t.Fatal("zoneFileTree not registered after View(); scroll test cannot execute")
-	}
+	z := waitForZone(t, zoneFileTree)
 	m = updateMainModel(t, m, tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 2,
 		Y:      z.StartY + 5,
@@ -3235,10 +3249,7 @@ func TestHandleScrollInSearchResults(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneSearchResults)
-	if z.IsZero() {
-		t.Fatal("zoneSearchResults not registered after View(); scroll test cannot execute")
-	}
+	z := waitForZone(t, zoneSearchResults)
 	// The scroll event should be processed without panicking.
 	m = updateMainModel(t, m, tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 2,
@@ -3503,7 +3514,7 @@ func TestHandleMouseHelpZoneClick(t *testing.T) {
 	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 40})
 
 	_ = m.View().Content
-	z := zone.Get(zoneHelp)
+	z := waitForZone(t, zoneHelp)
 
 	updated, _ := m.handleMouse(tea.MouseClickMsg(tea.Mouse{
 		Button: tea.MouseLeft,
@@ -3525,7 +3536,7 @@ func TestHandleMouseHeaderZoneClickWithPreamble(t *testing.T) {
 	m.preamble = "commit abc"
 
 	_ = m.View().Content
-	z := zone.Get(zoneHeader)
+	z := waitForZone(t, zoneHeader)
 
 	updated, _ := m.handleMouse(tea.MouseClickMsg(tea.Mouse{
 		Button: tea.MouseLeft,
@@ -4077,10 +4088,7 @@ func TestViewRendersWithHiddenSidebar(t *testing.T) {
 		t.Fatal("expected non-empty view with hidden sidebar")
 	}
 	// With hidden sidebar, the diffViewer zone should still be present.
-	z := zone.Get(zoneDiffViewer)
-	if z.IsZero() {
-		t.Error("expected diffViewer zone to be registered with hidden sidebar")
-	}
+	waitForZone(t, zoneDiffViewer)
 }
 
 func TestViewRendersWithSearchActive(t *testing.T) {
@@ -4098,10 +4106,7 @@ func TestViewRendersWithSearchActive(t *testing.T) {
 		t.Fatal("expected non-empty view with search active")
 	}
 	// Search box zone should be registered.
-	z := zone.Get(zoneSearchBox)
-	if z.IsZero() {
-		t.Error("expected search box zone to be registered with search active")
-	}
+	waitForZone(t, zoneSearchBox)
 }
 
 // ---------------------------------------------------------------------------
@@ -4803,10 +4808,7 @@ func TestDiffPanePointAboveDirHeader(t *testing.T) {
 	// Call View() to register zones
 	_ = m.View().Content
 
-	z := zone.Get(zoneDiffViewer)
-	if z.IsZero() {
-		t.Fatal("expected zoneDiffViewer to be registered")
-	}
+	z := waitForZone(t, zoneDiffViewer)
 
 	// Create a mouse event inside the zone but in the dir-header area (paneY < 3)
 	// paneY = 0, 1, or 2 maps to dir header
@@ -4827,10 +4829,7 @@ func TestDiffPanePointInContentArea(t *testing.T) {
 	// Call View() to register zones
 	_ = m.View().Content
 
-	z := zone.Get(zoneDiffViewer)
-	if z.IsZero() {
-		t.Fatal("expected zoneDiffViewer to be registered")
-	}
+	z := waitForZone(t, zoneDiffViewer)
 
 	// Create a click in the content area (below dir header: paneY >= 3)
 	point, ok := m.diffPanePoint(tea.MouseClickMsg(tea.Mouse{
@@ -4947,10 +4946,7 @@ func TestHandleSearchResultClickValidIndex(t *testing.T) {
 	// Must call View() to register zones
 	_ = m.View().Content
 
-	z := zone.Get(zoneSearchResults)
-	if z.IsZero() {
-		t.Fatal("expected zoneSearchResults to be registered")
-	}
+	z := waitForZone(t, zoneSearchResults)
 
 	if len(m.filtered) == 0 {
 		t.Fatal("expected at least one search result")
@@ -4963,7 +4959,7 @@ func TestHandleSearchResultClickValidIndex(t *testing.T) {
 		Button: tea.MouseLeft,
 	})
 
-	_, y := zone.Get(zoneSearchResults).Pos(mouseMsg)
+	_, y := waitForZone(t, zoneSearchResults).Pos(mouseMsg)
 	if y < 0 {
 		t.Fatal("expected valid zone-relative y")
 	}
@@ -4991,10 +4987,7 @@ func TestHandleSearchResultClickIndexOutOfRange(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneSearchResults)
-	if z.IsZero() {
-		t.Fatal("zoneSearchResults not registered after View()")
-	}
+	z := waitForZone(t, zoneSearchResults)
 
 	// Click at a Y offset far below the last result
 	// Set the viewport YOffset such that y + YOffset >= len(filtered)
@@ -5005,7 +4998,7 @@ func TestHandleSearchResultClickIndexOutOfRange(t *testing.T) {
 	})
 
 	// Compute clickedIndex
-	_, y := zone.Get(zoneSearchResults).Pos(mouseMsg)
+	_, y := waitForZone(t, zoneSearchResults).Pos(mouseMsg)
 	if y < 0 {
 		// Out of zone bounds — handleSearchResultClick returns early via y<0 check
 		return
@@ -5034,10 +5027,7 @@ func TestHandleFileTreeClickNilNode(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneFileTree)
-	if z.IsZero() {
-		t.Fatal("zoneFileTree not registered after View()")
-	}
+	z := waitForZone(t, zoneFileTree)
 
 	// Click at a Y offset where no node exists (far below the tree)
 	// GetNodeAtY should return nil for clicks past the tree content
@@ -5077,10 +5067,7 @@ func TestHandleFileTreeClickDirectoryIconHit(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneFileTree)
-	if z.IsZero() {
-		t.Fatal("zoneFileTree not registered after View()")
-	}
+	z := waitForZone(t, zoneFileTree)
 
 	localY := node.YOffset() - m.fileTree.ViewportYOffset()
 
@@ -5119,10 +5106,7 @@ func TestHandleScrollInFileTreeZone(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneFileTree)
-	if z.IsZero() {
-		t.Fatal("zoneFileTree not registered after View()")
-	}
+	z := waitForZone(t, zoneFileTree)
 
 	// Scroll down in the file tree zone
 	before := m.fileTree.ViewportYOffset()
@@ -5155,10 +5139,7 @@ func TestHandleScrollUpInFileTreeZone(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneFileTree)
-	if z.IsZero() {
-		t.Fatal("zoneFileTree not registered after View()")
-	}
+	z := waitForZone(t, zoneFileTree)
 
 	before := m.fileTree.ViewportYOffset()
 	updated, _ := m.handleScroll(tea.MouseMotionMsg(tea.Mouse{
@@ -5192,10 +5173,7 @@ func TestHandleScrollInSearchResultsZone(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneSearchResults)
-	if z.IsZero() {
-		t.Fatal("zoneSearchResults not registered after View()")
-	}
+	z := waitForZone(t, zoneSearchResults)
 
 	// Scroll down in search results
 	updated, _ := m.handleScroll(tea.MouseMotionMsg(tea.Mouse{
@@ -5225,10 +5203,7 @@ func TestHandleScrollUpInSearchResultsZone(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneSearchResults)
-	if z.IsZero() {
-		t.Fatal("zoneSearchResults not registered after View()")
-	}
+	z := waitForZone(t, zoneSearchResults)
 
 	updated, _ := m.handleScroll(tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 2,
@@ -5251,10 +5226,7 @@ func TestHandleScrollInDiffViewerZoneUp(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneDiffViewer)
-	if z.IsZero() {
-		t.Fatal("zoneDiffViewer not registered after View()")
-	}
+	z := waitForZone(t, zoneDiffViewer)
 
 	before := m.diffViewer.YOffset()
 
@@ -5298,10 +5270,7 @@ func TestHandleDiffSelectionMotionAboveViewport(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneDiffViewer)
-	if z.IsZero() {
-		t.Fatal("zoneDiffViewer not registered after View()")
-	}
+	z := waitForZone(t, zoneDiffViewer)
 
 	// Move cursor above the dir header area (paneY < 3)
 	// Use mouse Y position that puts paneY < DirHeaderHeight
@@ -5341,10 +5310,7 @@ func TestHandleDiffSelectionMotionBelowViewport(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneDiffViewer)
-	if z.IsZero() {
-		t.Fatal("zoneDiffViewer not registered after View()")
-	}
+	z := waitForZone(t, zoneDiffViewer)
 
 	// Move cursor below the viewport bottom
 	// paneY >= DirHeaderHeight + vpHeight -> scroll down
@@ -5386,10 +5352,7 @@ func TestHandleDiffSelectionMotionInViewport(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneDiffViewer)
-	if z.IsZero() {
-		t.Fatal("zoneDiffViewer not registered after View()")
-	}
+	z := waitForZone(t, zoneDiffViewer)
 
 	// Move cursor within the viewport (paneY between DirHeaderHeight and DirHeaderHeight+vpHeight)
 	inViewportY := z.StartY + diffviewer.DirHeaderHeight + 5
@@ -5601,10 +5564,7 @@ func TestHandleMouseMotionWithDiffSelection(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneDiffViewer)
-	if z.IsZero() {
-		t.Fatal("zoneDiffViewer not registered after View()")
-	}
+	z := waitForZone(t, zoneDiffViewer)
 
 	// Start a selection in the diff pane
 	point := diffviewer.Point{Line: 5, Col: 0}
@@ -5635,10 +5595,7 @@ func TestHandleMouseClickStartsDiffSelection(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneDiffViewer)
-	if z.IsZero() {
-		t.Fatal("zoneDiffViewer not registered after View()")
-	}
+	z := waitForZone(t, zoneDiffViewer)
 
 	// Click in the content area of the diff pane
 	clickY := z.StartY + diffviewer.DirHeaderHeight + 5
@@ -5668,10 +5625,7 @@ func TestHandleMouseWheelRoutedToHandleScroll(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneDiffViewer)
-	if z.IsZero() {
-		t.Fatal("zoneDiffViewer not registered after View()")
-	}
+	z := waitForZone(t, zoneDiffViewer)
 
 	// Mouse wheel events should be routed to handleScroll
 	m.diffViewer.ScrollDown(5) // ensure we have some scroll offset
@@ -5706,10 +5660,7 @@ func TestHandleMouseHeaderZoneClickWithoutPreamble(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneHeader)
-	if z.IsZero() {
-		t.Fatal("zoneHeader not registered after View()")
-	}
+	z := waitForZone(t, zoneHeader)
 
 	updated, _ := m.handleMouse(tea.MouseClickMsg(tea.Mouse{
 		Button: tea.MouseLeft,
@@ -5736,10 +5687,7 @@ func TestHandleMouseSearchBoxZoneClickWhenAlreadySearching(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneSearchBox)
-	if z.IsZero() {
-		t.Fatal("zoneSearchBox not registered after View()")
-	}
+	z := waitForZone(t, zoneSearchBox)
 
 	// Click on the search box while already searching - should be no-op per handleSearchBoxClick
 	updated, _ := m.handleMouse(tea.MouseClickMsg(tea.Mouse{
@@ -5766,10 +5714,7 @@ func TestHandleMouseHelpZoneClickTogglesHelp(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneHelp)
-	if z.IsZero() {
-		t.Fatal("zoneHelp not registered after View()")
-	}
+	z := waitForZone(t, zoneHelp)
 
 	// Click help zone to open help
 	updated, _ := m.handleMouse(tea.MouseClickMsg(tea.Mouse{
@@ -5811,10 +5756,7 @@ func TestHandleMouseHeaderZoneClickWithPreambleOpensMessage(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneHeader)
-	if z.IsZero() {
-		t.Fatal("zoneHeader not registered after View()")
-	}
+	z := waitForZone(t, zoneHeader)
 
 	updated, _ := m.handleMouse(tea.MouseClickMsg(tea.Mouse{
 		Button: tea.MouseLeft,
@@ -5846,10 +5788,7 @@ func TestHandleMouseSearchResultsZoneClick(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneSearchResults)
-	if z.IsZero() {
-		t.Fatal("zoneSearchResults not registered after View()")
-	}
+	z := waitForZone(t, zoneSearchResults)
 
 	if len(m.filtered) == 0 {
 		t.Fatal("expected at least one search result")
@@ -5880,10 +5819,7 @@ func TestHandleMouseFileTreeZoneClick(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneFileTree)
-	if z.IsZero() {
-		t.Fatal("zoneFileTree not registered after View()")
-	}
+	z := waitForZone(t, zoneFileTree)
 
 	// Click on the first visible node in the file tree
 	updated, _ := m.handleMouse(tea.MouseClickMsg(tea.Mouse{
@@ -6230,10 +6166,7 @@ func TestHandleSearchResultClickIndexExceedsFiltered(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneSearchResults)
-	if z.IsZero() {
-		t.Fatal("zoneSearchResults not registered after View()")
-	}
+	z := waitForZone(t, zoneSearchResults)
 
 	// Scroll the results viewport so that viewport YOffset > 0
 	// This makes clickedIndex = y + YOffset potentially exceed len(filtered)
@@ -6310,10 +6243,7 @@ func TestHandleDiffSelectionMotionClampX(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneDiffViewer)
-	if z.IsZero() {
-		t.Fatal("zoneDiffViewer not registered after View()")
-	}
+	z := waitForZone(t, zoneDiffViewer)
 
 	// Move cursor within the viewport to test the clamping paths
 	vpHeight := m.diffViewer.Height()
@@ -6344,10 +6274,7 @@ func TestHandleDiffSelectionMotionDiffPanePointFails(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneDiffViewer)
-	if z.IsZero() {
-		t.Fatal("zoneDiffViewer not registered after View()")
-	}
+	z := waitForZone(t, zoneDiffViewer)
 
 	// Move cursor to the dir-header area where diffPanePoint returns ok=false
 	// paneY < DirHeaderHeight
@@ -6373,10 +6300,7 @@ func TestHandleMouseSearchBoxZoneClickWhenNotSearching(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneSearchBox)
-	if z.IsZero() {
-		t.Fatal("zoneSearchBox not registered after View()")
-	}
+	z := waitForZone(t, zoneSearchBox)
 
 	updated, _ := m.handleMouse(tea.MouseClickMsg(tea.Mouse{
 		Button: tea.MouseLeft,
@@ -6502,10 +6426,7 @@ func TestHandleSearchResultClickIndexOutOfRangeCoverage(t *testing.T) {
 	// Must call View() to register zones
 	_ = m.View().Content
 
-	z := zone.Get(zoneSearchResults)
-	if z.IsZero() {
-		t.Fatal("zoneSearchResults not registered after View()")
-	}
+	z := waitForZone(t, zoneSearchResults)
 
 	if len(m.filtered) == 0 {
 		t.Fatal("expected at least one search result")
@@ -6593,10 +6514,7 @@ func TestHandleDiffSelectionMotionClampedXEdgeCases(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneDiffViewer)
-	if z.IsZero() {
-		t.Fatal("zoneDiffViewer not registered after View()")
-	}
+	z := waitForZone(t, zoneDiffViewer)
 
 	// Move cursor within the viewport area
 	vpHeight := m.diffViewer.Height()
@@ -6684,10 +6602,7 @@ func TestHandleSearchResultClickScrolledPastResults(t *testing.T) {
 
 	_ = m.View().Content
 
-	z := zone.Get(zoneSearchResults)
-	if z.IsZero() {
-		t.Fatal("zoneSearchResults not registered after View()")
-	}
+	z := waitForZone(t, zoneSearchResults)
 
 	// Scroll to the bottom of the results
 	m.resultsVp.GotoBottom()
@@ -6769,8 +6684,10 @@ func TestClampToViewportWidth(t *testing.T) {
 		{x: 5, vpWidth: 10, want: 5},  // within bounds
 		{x: 15, vpWidth: 10, want: 9}, // past right edge
 		{x: 5, vpWidth: 0, want: 5},   // zero vpWidth (no clamping)
-		{x: 0, vpWidth: 10, want: 0},  // left edge
-		{x: 9, vpWidth: 10, want: 9},  // right edge (vpWidth-1)
+		{x: 0, vpWidth: 10, want: 0},   // left edge
+		{x: 9, vpWidth: 10, want: 9},   // right edge (vpWidth-1)
+		{x: -33, vpWidth: 10, want: 0}, // negative x clamped to 0
+		{x: -5, vpWidth: 0, want: -5},  // negative x, zero vpWidth (no clamping)
 	}
 	for _, tc := range cases {
 		got := clampToViewportWidth(tc.x, tc.vpWidth)
@@ -6842,10 +6759,7 @@ func TestHandleDiffSelectionMotionOutOfBoundsHorizontal(t *testing.T) {
 	m.diffViewer.StartSelection(diffviewer.Point{Line: 0, Col: 0})
 
 	// Get the diffViewer zone and construct a mouse event outside it horizontally.
-	z := zone.Get(zoneDiffViewer)
-	if z.IsZero() {
-		t.Fatal("diffViewer zone not registered after View()")
-	}
+	z := waitForZone(t, zoneDiffViewer)
 
 	// Mouse to the left of the zone.
 	msg := tea.MouseMotionMsg(tea.Mouse{X: 0, Y: z.StartY + 5})
@@ -6867,10 +6781,7 @@ func TestHandleDiffSelectionMotionAbovePane(t *testing.T) {
 	_ = m.View().Content
 	m.diffViewer.StartSelection(diffviewer.Point{Line: 5, Col: 5})
 
-	z := zone.Get(zoneDiffViewer)
-	if z.IsZero() {
-		t.Fatal("diffViewer zone not registered after View()")
-	}
+	z := waitForZone(t, zoneDiffViewer)
 
 	// Mouse above the dir header.
 	msg := tea.MouseMotionMsg(tea.Mouse{X: z.StartX + 5, Y: z.StartY + 1})
@@ -6892,10 +6803,7 @@ func TestHandleDiffSelectionMotionBelowPane(t *testing.T) {
 	_ = m.View().Content
 	m.diffViewer.StartSelection(diffviewer.Point{Line: 5, Col: 5})
 
-	z := zone.Get(zoneDiffViewer)
-	if z.IsZero() {
-		t.Fatal("diffViewer zone not registered after View()")
-	}
+	z := waitForZone(t, zoneDiffViewer)
 
 	// Mouse below the viewport (past the pane).
 	msg := tea.MouseMotionMsg(tea.Mouse{
@@ -6920,10 +6828,7 @@ func TestHandleDiffSelectionMotionClampedX(t *testing.T) {
 	_ = m.View().Content
 	m.diffViewer.StartSelection(diffviewer.Point{Line: 5, Col: 5})
 
-	z := zone.Get(zoneDiffViewer)
-	if z.IsZero() {
-		t.Fatal("diffViewer zone not registered after View()")
-	}
+	z := waitForZone(t, zoneDiffViewer)
 
 	vpWidth := m.diffViewer.Width()
 	// Use a mouse X that's past the viewport width relative to zone start.
