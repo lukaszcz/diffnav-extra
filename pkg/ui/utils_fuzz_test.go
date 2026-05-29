@@ -36,6 +36,44 @@ func FuzzRelativeTime(f *testing.F) {
 		if !found {
 			t.Errorf("relativeTime(%v) = %q, unexpected format", tt, result)
 		}
+		// Range correctness: verify the suffix matches the time bucket.
+		dur := time.Since(tt)
+		if dur < 0 {
+			// Future times should always return "now".
+			if result != "now" {
+				t.Errorf("relativeTime(future %v) = %q, want 'now'", tt, result)
+			}
+		} else if dur < time.Minute {
+			if result != "now" {
+				t.Errorf("relativeTime(%v, dur=%v) = %q, want 'now'", tt, dur, result)
+			}
+		} else if dur < time.Hour {
+			if !strings.HasSuffix(result, "m") {
+				t.Errorf("relativeTime(%v, dur=%v) = %q, want 'Nm' suffix", tt, dur, result)
+			}
+		} else if dur < 24*time.Hour {
+			if !strings.HasSuffix(result, "h") {
+				t.Errorf("relativeTime(%v, dur=%v) = %q, want 'Nh' suffix", tt, dur, result)
+			}
+		} else if dur < 30*24*time.Hour {
+			if !strings.HasSuffix(result, "d") {
+				t.Errorf("relativeTime(%v, dur=%v) = %q, want 'Nd' suffix", tt, dur, result)
+			}
+		} else if dur < 365*24*time.Hour {
+			if !strings.HasSuffix(result, "mo") {
+				t.Errorf("relativeTime(%v, dur=%v) = %q, want 'Nmo' suffix", tt, dur, result)
+			}
+		} else {
+			if !strings.HasSuffix(result, "y") {
+				t.Errorf("relativeTime(%v, dur=%v) = %q, want 'Ny' suffix", tt, dur, result)
+			}
+		}
+		// Clamping idempotence: running relativeTime on the result time should
+		// not produce a completely different bucket.
+		result2 := relativeTime(tt)
+		if result != result2 {
+			t.Errorf("relativeTime not idempotent: first=%q second=%q", result, result2)
+		}
 	})
 }
 

@@ -21,6 +21,8 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/dlvhdr/diffnav/pkg/config"
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/dlvhdr/diffnav/pkg/dirnode"
 	"github.com/dlvhdr/diffnav/pkg/filenode"
 	"github.com/dlvhdr/diffnav/pkg/ui/common"
@@ -2718,16 +2720,23 @@ func TestUpdateMessageOverlayDownUp(t *testing.T) {
 
 	offset0 := m.messageVp.YOffset()
 	m = updateMainModel(t, m, tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
-	if m.messageVp.YOffset() <= offset0 {
+	offsetAfterDown := m.messageVp.YOffset()
+	if offsetAfterDown <= offset0 {
 		t.Fatalf(
 			"expected messageVp to scroll down, YOffset was %d now %d",
 			offset0,
-			m.messageVp.YOffset(),
+			offsetAfterDown,
 		)
 	}
 
 	m = updateMainModel(t, m, tea.KeyPressMsg(tea.Key{Code: tea.KeyUp}))
-	// After scrolling up, YOffset should decrease or stay at 0
+	if m.messageVp.YOffset() >= offsetAfterDown {
+		t.Fatalf(
+			"expected messageVp YOffset to decrease after up, was %d now %d",
+			offsetAfterDown,
+			m.messageVp.YOffset(),
+		)
+	}
 }
 
 func TestUpdateMessageOverlayCtrlDCtrlU(t *testing.T) {
@@ -3020,6 +3029,13 @@ func TestViewHeaderWithASCIIIconStyle(t *testing.T) {
 	if !strings.Contains(header, "DIFFNAV") {
 		t.Fatal("expected header to contain DIFFNAV")
 	}
+	// Nerd and ASCII icon styles must produce different header output because
+	// the logo glyph differs between styles.
+	m.iconStyle = filenode.IconsNerdStatus
+	nerdHeader := m.viewHeader()
+	if header == nerdHeader {
+		t.Fatal("expected ASCII and Nerd icon styles to produce different header output")
+	}
 }
 
 func TestViewHeaderNoMeta(t *testing.T) {
@@ -3104,6 +3120,11 @@ func TestFooterViewLightBackground(t *testing.T) {
 	footer := m.footerView()
 	if footer == "" {
 		t.Fatal("expected non-empty footer")
+	}
+	// Light background footer must contain file count information.
+	plain := ansi.Strip(footer)
+	if !strings.Contains(plain, "files") {
+		t.Fatal("expected light background footer to contain 'files'")
 	}
 }
 
@@ -4025,13 +4046,16 @@ func TestCtrlDCtrlUInDiffViewer(t *testing.T) {
 	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 40})
 	m.activePanel = DiffViewerPanel
 
+	// Inject scrollable content so CtrlD/CtrlU can actually scroll.
+	m.diffViewer.SetContent(strings.Repeat("line\n", 500))
+
 	// ctrl+d should scroll diff down half a page (handled by diffViewer.Update)
 	beforeY := m.diffViewer.YOffset()
 	m = updateMainModel(t, m, tea.KeyPressMsg(tea.Key{Code: 'd', Mod: tea.ModCtrl}))
 	afterDownY := m.diffViewer.YOffset()
-	if afterDownY < beforeY {
+	if afterDownY <= beforeY {
 		t.Fatalf(
-			"expected YOffset to increase after CtrlD, got before=%d after=%d",
+			"expected YOffset to strictly increase after CtrlD, got before=%d after=%d",
 			beforeY,
 			afterDownY,
 		)
@@ -4040,9 +4064,9 @@ func TestCtrlDCtrlUInDiffViewer(t *testing.T) {
 	// ctrl+u should scroll diff up half a page
 	m = updateMainModel(t, m, tea.KeyPressMsg(tea.Key{Code: 'u', Mod: tea.ModCtrl}))
 	afterUpY := m.diffViewer.YOffset()
-	if afterUpY > afterDownY {
+	if afterUpY >= afterDownY {
 		t.Fatalf(
-			"expected YOffset to decrease after CtrlU, got before=%d after=%d",
+			"expected YOffset to strictly decrease after CtrlU, got before=%d after=%d",
 			afterDownY,
 			afterUpY,
 		)
@@ -5190,7 +5214,8 @@ func TestHandleFileTreeClickDirectoryIconHit(t *testing.T) {
 
 func TestHandleScrollInFileTreeZone(t *testing.T) {
 	m := newTestMainModel(t)
-	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 40})
+	// Use a short viewport so the file tree content overflows and scrolling works.
+	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 8})
 
 	_ = m.View().Content
 
@@ -5200,7 +5225,7 @@ func TestHandleScrollInFileTreeZone(t *testing.T) {
 	before := m.fileTree.ViewportYOffset()
 	updated, _ := m.handleScroll(tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 2,
-		Y:      z.StartY + 5,
+		Y:      z.StartY + 1,
 		Button: tea.MouseWheelDown,
 	}))
 	result, ok := updated.(mainModel)
@@ -5208,40 +5233,38 @@ func TestHandleScrollInFileTreeZone(t *testing.T) {
 		t.Fatalf("unexpected model type %T", updated)
 	}
 	after := result.fileTree.ViewportYOffset()
-	if after > before {
-		// Content overflows — scroll up should decrease it.
-		updated2, _ := result.handleScroll(tea.MouseMotionMsg(tea.Mouse{
-			X:      z.StartX + 2,
-			Y:      z.StartY + 5,
-			Button: tea.MouseWheelUp,
-		}))
-		result2, ok := updated2.(mainModel)
-		if !ok {
-			t.Fatalf("unexpected model type %T", updated2)
-		}
-		after2 := result2.fileTree.ViewportYOffset()
-		if after2 >= after {
-			t.Fatalf(
-				"expected viewport Y offset to decrease after scroll up, before=%d after=%d",
-				after,
-				after2,
-			)
-		}
-	} else {
-		// Content fits viewport — offset must stay the same.
-		if after < before {
-			t.Fatalf(
-				"viewport offset must not decrease on scroll down, got before=%d after=%d",
-				before,
-				after,
-			)
-		}
+	if after <= before {
+		t.Fatalf(
+			"expected viewport Y offset to increase after scroll down, before=%d after=%d",
+			before,
+			after,
+		)
+	}
+
+	// Scroll up should reverse it.
+	updated2, _ := result.handleScroll(tea.MouseMotionMsg(tea.Mouse{
+		X:      z.StartX + 2,
+		Y:      z.StartY + 1,
+		Button: tea.MouseWheelUp,
+	}))
+	result2, ok := updated2.(mainModel)
+	if !ok {
+		t.Fatalf("unexpected model type %T", updated2)
+	}
+	after2 := result2.fileTree.ViewportYOffset()
+	if after2 >= after {
+		t.Fatalf(
+			"expected viewport Y offset to decrease after scroll up, before=%d after=%d",
+			after,
+			after2,
+		)
 	}
 }
 
 func TestHandleScrollUpInFileTreeZone(t *testing.T) {
 	m := newTestMainModel(t)
-	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 40})
+	// Use a very short viewport so the tree content overflows.
+	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 8})
 
 	// Scroll down first so we can scroll up
 	m.fileTree.ScrollDown(10)
@@ -5251,9 +5274,14 @@ func TestHandleScrollUpInFileTreeZone(t *testing.T) {
 	z := waitForZone(t, zoneFileTree)
 
 	before := m.fileTree.ViewportYOffset()
+	if before == 0 {
+		// Even with a small window, the tree might fit. If so, skip.
+		t.Skip("file tree fits viewport; cannot test scroll-up")
+	}
+
 	updated, _ := m.handleScroll(tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 2,
-		Y:      z.StartY + 5,
+		Y:      z.StartY + 1,
 		Button: tea.MouseWheelUp,
 	}))
 	result, ok := updated.(mainModel)
@@ -5261,9 +5289,9 @@ func TestHandleScrollUpInFileTreeZone(t *testing.T) {
 		t.Fatalf("unexpected model type %T", updated)
 	}
 	after := result.fileTree.ViewportYOffset()
-	if after > before {
+	if after >= before {
 		t.Fatalf(
-			"expected viewport Y offset to decrease or stay same after scroll up, before=%d after=%d",
+			"expected viewport Y offset to strictly decrease after scroll up, before=%d after=%d",
 			before,
 			after,
 		)
@@ -5277,8 +5305,18 @@ func TestHandleScrollInSearchResultsZone(t *testing.T) {
 	m.search.SetValue("") // match all
 	m.setSearchResults()
 	m.resultsVp.SetWidth(m.config.UI.SearchTreeWidth)
-	m.resultsVp.SetHeight(m.mainContentHeight() - searchHeight)
+	// Use a small results viewport so content definitely overflows.
+	m.resultsVp.SetHeight(2)
 	m.resultsVp.SetContent(m.resultsView())
+
+	// Verify precondition: content overflows the viewport so scrolling works.
+	if m.resultsVp.TotalLineCount() <= m.resultsVp.Height() {
+		t.Skipf(
+			"search results fit viewport (total=%d height=%d), cannot test scrolling",
+			m.resultsVp.TotalLineCount(),
+			m.resultsVp.Height(),
+		)
+	}
 
 	_ = m.View().Content
 
@@ -5288,7 +5326,7 @@ func TestHandleScrollInSearchResultsZone(t *testing.T) {
 	// Scroll down; with a short viewport the content should overflow.
 	updated, _ := m.handleScroll(tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 2,
-		Y:      z.StartY + 2,
+		Y:      z.StartY + 1,
 		Button: tea.MouseWheelDown,
 	}))
 	result, ok := updated.(mainModel)
@@ -5296,13 +5334,6 @@ func TestHandleScrollInSearchResultsZone(t *testing.T) {
 		t.Fatalf("unexpected model type %T", updated)
 	}
 	after := result.resultsVp.YOffset()
-	if after >= before {
-		// Content fits the viewport — not enough results to scroll.
-		if after < 0 {
-			t.Fatalf("viewport offset must not be negative, got %d", after)
-		}
-		return
-	}
 	if after <= before {
 		t.Fatalf(
 			"expected search results YOffset to increase after scroll down, before=%d after=%d",
@@ -5319,11 +5350,20 @@ func TestHandleScrollUpInSearchResultsZone(t *testing.T) {
 	m.search.SetValue("") // match all
 	m.setSearchResults()
 	m.resultsVp.SetWidth(m.config.UI.SearchTreeWidth)
-	m.resultsVp.SetHeight(m.mainContentHeight() - searchHeight)
+	// Use a small results viewport so content definitely overflows.
+	m.resultsVp.SetHeight(2)
 	m.resultsVp.SetContent(m.resultsView())
 
-	// Scroll down first so we have room to scroll up.
+	if m.resultsVp.TotalLineCount() <= m.resultsVp.Height() {
+		t.Skip("search results fit viewport; cannot test scroll-up")
+	}
+
+	// Scroll down far enough to guarantee a non-zero offset for scroll-up.
 	m.resultsVp.ScrollDown(5)
+
+	if m.resultsVp.YOffset() == 0 {
+		t.Skip("results viewport did not scroll after ScrollDown")
+	}
 
 	_ = m.View().Content
 
@@ -5332,7 +5372,7 @@ func TestHandleScrollUpInSearchResultsZone(t *testing.T) {
 	before := m.resultsVp.YOffset()
 	updated, _ := m.handleScroll(tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 2,
-		Y:      z.StartY + 2,
+		Y:      z.StartY + 1,
 		Button: tea.MouseWheelUp,
 	}))
 	result, ok := updated.(mainModel)
@@ -5340,16 +5380,9 @@ func TestHandleScrollUpInSearchResultsZone(t *testing.T) {
 		t.Fatalf("unexpected model type %T", updated)
 	}
 	after := result.resultsVp.YOffset()
-	if before == 0 {
-		// Content fits viewport — scroll-up is a valid no-op.
-		if after != 0 {
-			t.Fatalf("expected YOffset to stay 0 when no overflow, got %d", after)
-		}
-		return
-	}
 	if after >= before {
 		t.Fatalf(
-			"expected search results YOffset to decrease after scroll up, before=%d after=%d",
+			"expected search results YOffset to strictly decrease after scroll up, before=%d after=%d",
 			before,
 			after,
 		)
@@ -5360,6 +5393,9 @@ func TestHandleScrollInDiffViewerZoneUp(t *testing.T) {
 	m := newTestMainModel(t)
 	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 40})
 
+	// Inject scrollable content so scrolling actually works.
+	m.diffViewer.SetContent(strings.Repeat("line\n", 500))
+
 	// Scroll down first so we can scroll up
 	m.diffViewer.ScrollDown(10)
 
@@ -5368,6 +5404,9 @@ func TestHandleScrollInDiffViewerZoneUp(t *testing.T) {
 	z := waitForZone(t, zoneDiffViewer)
 
 	before := m.diffViewer.YOffset()
+	if before == 0 {
+		t.Fatalf("precondition: expected non-zero YOffset after ScrollDown, got 0")
+	}
 
 	// Scroll up in diff viewer zone
 	updated, _ := m.handleScroll(tea.MouseMotionMsg(tea.Mouse{
@@ -5380,9 +5419,9 @@ func TestHandleScrollInDiffViewerZoneUp(t *testing.T) {
 		t.Fatalf("unexpected model type %T", updated)
 	}
 	after := result.diffViewer.YOffset()
-	if after > before {
+	if after >= before {
 		t.Fatalf(
-			"expected YOffset to decrease or stay same after scroll up, before=%d after=%d",
+			"expected YOffset to strictly decrease after scroll up, before=%d after=%d",
 			before,
 			after,
 		)
@@ -5556,7 +5595,9 @@ func TestHandleDiffSelectionMotionNotSelecting(t *testing.T) {
 	m := newTestMainModel(t)
 	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 40})
 
-	// When not selecting, should be a no-op
+	// When not selecting, the handler should be a complete no-op.
+	beforeYOffset := m.diffViewer.YOffset()
+
 	updated, _ := m.handleDiffSelectionMotion(tea.MouseMotionMsg(tea.Mouse{
 		X:      50,
 		Y:      10,
@@ -5569,6 +5610,14 @@ func TestHandleDiffSelectionMotionNotSelecting(t *testing.T) {
 	// Model should be unchanged when not selecting
 	if result.diffViewer.IsSelecting() {
 		t.Fatal("expected no selection to be active when not previously selecting")
+	}
+	// The diff viewer scroll position should not have changed.
+	if result.diffViewer.YOffset() != beforeYOffset {
+		t.Fatalf("expected YOffset to remain %d, got %d", beforeYOffset, result.diffViewer.YOffset())
+	}
+	// HasSelection should still be false.
+	if result.diffViewer.HasSelection() {
+		t.Fatal("expected HasSelection to remain false when not selecting")
 	}
 }
 
@@ -6417,8 +6466,16 @@ func TestHandleFileTreeClickNegativeY(t *testing.T) {
 func TestHandleDiffSelectionMotionZeroZone(t *testing.T) {
 	m := newTestMainModel(t)
 
-	// Without calling View(), zones are not registered, so zone.Get returns zero
 	m.diffViewer.StartSelection(diffviewer.Point{Line: 5, Col: 0})
+
+	// Inject a zero-zone getter so the early-return path is exercised regardless
+	// of lingering zone state from prior tests.
+	origGetZone := getDiffViewerZone
+	defer func() { getDiffViewerZone = origGetZone }()
+	getDiffViewerZone = func() *zone.ZoneInfo { return &zone.ZoneInfo{} }
+
+	// Record selection state before the motion.
+	anchorBefore, headBefore, _, _ := m.diffViewer.DebugSelection()
 
 	result, _ := m.handleDiffSelectionMotion(tea.MouseMotionMsg(tea.Mouse{
 		X:      50,
@@ -6432,6 +6489,14 @@ func TestHandleDiffSelectionMotionZeroZone(t *testing.T) {
 	// With a zero zone, the function should return early without updating selection head.
 	if !m2.diffViewer.IsSelecting() {
 		t.Fatal("expected selection to remain active after zero-zone motion")
+	}
+	// Verify selection head and anchor are unchanged — zero zone means no-op.
+	anchorAfter, headAfter, _, _ := m2.diffViewer.DebugSelection()
+	if anchorAfter != anchorBefore {
+		t.Fatalf("expected anchor unchanged, before=%+v after=%+v", anchorBefore, anchorAfter)
+	}
+	if headAfter != headBefore {
+		t.Fatalf("expected head unchanged, before=%+v after=%+v", headBefore, headAfter)
 	}
 }
 
@@ -6484,8 +6549,10 @@ func TestHandleDiffSelectionMotionDiffPanePointFails(t *testing.T) {
 
 	z := waitForZone(t, zoneDiffViewer)
 
-	// Move cursor to the dir-header area where diffPanePoint returns ok=false
-	// paneY < DirHeaderHeight
+	// Move cursor to the dir-header area where paneY < DirHeaderHeight.
+	// This triggers the ScrollUp(1) branch and ExtendSelection with line=YOffset.
+	beforeYOffset := m.diffViewer.YOffset()
+
 	updated, _ := m.handleDiffSelectionMotion(tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 5,
 		Y:      z.StartY + 1, // paneY = 1, < DirHeaderHeight
@@ -6495,10 +6562,17 @@ func TestHandleDiffSelectionMotionDiffPanePointFails(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	// When diffPanePoint returns !ok, the function returns early without
-	// modifying selection state. Selection should still be active.
+	// Selection should still be active.
 	if !result.diffViewer.IsSelecting() {
 		t.Fatal("expected selection to remain active after diffPanePoint failure")
+	}
+	// The above-viewport branch should have scrolled up.
+	if beforeYOffset > 0 {
+		if result.diffViewer.YOffset() >= beforeYOffset {
+			t.Fatalf(
+				"expected YOffset to decrease when dragging above dir header, before=%d after=%d",
+				beforeYOffset, result.diffViewer.YOffset())
+		}
 	}
 }
 
@@ -6715,9 +6789,15 @@ func TestHandleSearchResultClickIndexOutOfRangeCoverage(t *testing.T) {
 func TestHandleDiffSelectionMotionZeroZoneCoverage(t *testing.T) {
 	m := newTestMainModel(t)
 
-	// Without calling View(), zones won't be registered, so zone.Get returns zero.
-	// DO NOT call View() in this test.
 	m.diffViewer.StartSelection(diffviewer.Point{Line: 5, Col: 0})
+
+	// Inject a zero-zone getter so the early-return path is exercised.
+	origGetZone := getDiffViewerZone
+	defer func() { getDiffViewerZone = origGetZone }()
+	getDiffViewerZone = func() *zone.ZoneInfo { return &zone.ZoneInfo{} }
+
+	// Record selection state before the motion.
+	anchorBefore, headBefore, _, _ := m.diffViewer.DebugSelection()
 
 	result, _ := m.handleDiffSelectionMotion(tea.MouseMotionMsg(tea.Mouse{
 		X:      50,
@@ -6731,6 +6811,14 @@ func TestHandleDiffSelectionMotionZeroZoneCoverage(t *testing.T) {
 	// With a zero zone, the function should return early without updating selection head
 	if !m2.diffViewer.IsSelecting() {
 		t.Fatal("expected selection to still be active after zero zone motion")
+	}
+	// Verify selection anchor and head are unchanged — zero zone means no-op.
+	anchorAfter, headAfter, _, _ := m2.diffViewer.DebugSelection()
+	if anchorAfter != anchorBefore {
+		t.Fatalf("expected anchor unchanged, before=%+v after=%+v", anchorBefore, anchorAfter)
+	}
+	if headAfter != headBefore {
+		t.Fatalf("expected head unchanged, before=%+v after=%+v", headBefore, headAfter)
 	}
 }
 

@@ -86,15 +86,46 @@ func TestGetIcon_NoExtension(t *testing.T) {
 }
 
 func TestGetIcon_PathWithSlash(t *testing.T) {
-	// Ensure the function extracts extension from a path-containing filename
-	ext := "go"
-	want, ok := Extensions[ext]
-	if !ok {
-		t.Fatalf("no icon registered for extension %q", ext)
-	}
+	// Ensure the function extracts extension from a path-containing filename.
+	// Independent expected value — not read from the Extensions map.
 	got := GetIcon("dir/main.go", false)
-	if got != want {
-		t.Errorf("GetIcon(%q, false) = %q, want %q", "dir/main.go", got, want)
+	if got != "\ue65e" {
+		t.Errorf("GetIcon(%q, false) = %q, want %q", "dir/main.go", got, "\ue65e")
+	}
+}
+
+func TestGetIcon_ExactFilenameBeatsExtension(t *testing.T) {
+	// Dockerfile has an entry in Filenames; .go has an entry in Extensions.
+	// A file literally named "Dockerfile" should get the filename-specific icon,
+	// not the default-file icon (which would happen if Extensions were consulted
+	// first and found no ".Dockerfile" extension).
+	result := GetIcon("Dockerfile", false)
+	dockerfileIcon := Filenames["Dockerfile"]
+	if result != dockerfileIcon {
+		t.Errorf("expected exact-filename icon for Dockerfile, got %q (filename icon=%q)", result, dockerfileIcon)
+	}
+}
+
+func TestGetIcon_DirectoryLookupIgnoresFileMaps(t *testing.T) {
+	// A directory name should always return a directory icon, never a file icon
+	// even if the name happens to match a key in Filenames or Extensions.
+	result := GetIcon("Dockerfile", true)
+	if result != DefaultDirIcon {
+		// Only if .Dockerfile is in the Directories map would a different icon be returned.
+		if dirIcon, ok := Directories["Dockerfile"]; ok && result != dirIcon {
+			t.Errorf("expected directory icon for %q is-dir=true, got %q", "Dockerfile", result)
+		}
+	}
+}
+
+func TestGetIcon_ExtensionExtractionConsistency(t *testing.T) {
+	// A file with the same extension but different path prefix should return
+	// the same icon — extension extraction should handle slashes correctly.
+	gotPlain := GetIcon("main.go", false)
+	gotWithPath := GetIcon("deep/nested/main.go", false)
+	if gotPlain != gotWithPath {
+		t.Errorf("expected same icon for same extension regardless of path: plain=%q with-path=%q",
+			gotPlain, gotWithPath)
 	}
 }
 

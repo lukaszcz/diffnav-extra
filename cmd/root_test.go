@@ -1300,18 +1300,17 @@ func TestDefaultInjectables(t *testing.T) {
 	}
 
 	// newProgram default: call the original function.
-	// newProgram with nil model returns a program object but Run() would fail.
+	// newProgram always returns a non-nil program object.
 	p := newProgram(nil)
 	if p == nil {
 		t.Error("expected non-nil program from newProgram")
 	}
 
 	// openTTY default: call the original function.
-	// tea.OpenTTY() needs a real terminal. In test mode it should fail.
-	_, _, ttyErr := openTTY()
-	if ttyErr == nil {
-		t.Error("expected openTTY to fail in test environment without a real terminal")
-	}
+	// Whether openTTY succeeds depends on the test environment; the call
+	// exercises the closure body for coverage. We do NOT assert failure —
+	// some CI environments provide a TTY.
+	_, _, _ = openTTY()
 
 	// runProgramFn default: the function body `return p.Run()` is at line 121.
 	// We call it with a real tea.Program (created with no options) that
@@ -1327,10 +1326,9 @@ func TestDefaultInjectables(t *testing.T) {
 		}
 	}()
 	_, runErr := runProgramFn(prog)
-	// runProgramFn should return an error when called with an invalid program
-	if runErr == nil {
-		t.Error("expected runProgramFn to return an error for program with no input/output")
-	}
+	// Whether runProgramFn returns an error depends on the environment
+	// (e.g., whether a TTY is available). We only assert it does not panic.
+	_ = runErr
 }
 
 func TestSetupLoggingCloseFileError(t *testing.T) {

@@ -6,7 +6,8 @@
     "golangci-lint": "2.11.3",
     "svu": "latest",
     "git": "latest",
-    "go-task": "latest"
+    "go-task": "latest",
+    "delta": "latest"
   },
   "shell": {
     "scripts": {
