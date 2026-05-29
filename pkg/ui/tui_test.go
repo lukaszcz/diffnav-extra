@@ -2146,9 +2146,10 @@ func TestRenderScrollbarAtBottom(t *testing.T) {
 	// Thumb should be near the bottom of the track
 	lines := strings.Split(sb, "\n")
 	lastIdx := len(lines) - 1
-	// At the bottom, the last line should be a thumb character
-	if !strings.Contains(lines[lastIdx], "┃") && !strings.Contains(lines[lastIdx], "│") {
-		t.Fatalf("expected scrollbar character on last line, got %q", lines[lastIdx])
+	// At the bottom, the last line should contain the thumb character "┃",
+	// not the track character "│"
+	if !strings.Contains(lines[lastIdx], "┃") {
+		t.Fatalf("expected thumb (┃) on last line when scrolled to bottom, got %q", lines[lastIdx])
 	}
 }
 
