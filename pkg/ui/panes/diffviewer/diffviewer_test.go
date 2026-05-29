@@ -1400,6 +1400,9 @@ func TestHeaderView_Dir(t *testing.T) {
 	if header == "" {
 		t.Fatalf("expected non-empty header for dir")
 	}
+	if !strings.Contains(header, "src") {
+		t.Errorf("expected header to contain dir path %q, got %q", "src", header)
+	}
 }
 
 // headerView() - file header.
@@ -1414,6 +1417,9 @@ func TestHeaderView_File(t *testing.T) {
 	header := m.headerView()
 	if header == "" {
 		t.Fatalf("expected non-empty header for file")
+	}
+	if !strings.Contains(header, "main.go") {
+		t.Errorf("expected header to contain file name %q", "main.go")
 	}
 }
 

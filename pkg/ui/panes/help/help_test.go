@@ -95,9 +95,7 @@ func TestViewWithKeys(t *testing.T) {
 	m := New()
 	m.SetKeys(threeColumnKeys())
 	view := m.View()
-	if view == "" {
-		t.Error("expected non-empty view with keys set")
-	}
+	// Should contain keybinding help text for each column.
 	for _, want := range []string{"alphaalpha", "bravobravo", "charliecha"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view missing %q: %s", want, view)

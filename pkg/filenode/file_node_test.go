@@ -827,8 +827,13 @@ func TestValue_PanelWidthZero_StandardLayout(t *testing.T) {
 	cfg.UI.ColorFileNames = false
 	fn := makeFileNode(newFile(withIsNew), cfg)
 	fn.PanelWidth = 0
-	if fn.Value() == "" {
+	val := fn.Value()
+	if val == "" {
 		t.Fatal("expected non-empty Value() with PanelWidth=0")
+	}
+	// Even with PanelWidth=0, the status icon should appear.
+	if !strings.Contains(val, "+") {
+		t.Errorf("expected Value() to contain status icon '+', got %q", val)
 	}
 }
 
@@ -876,8 +881,14 @@ func TestValue_DepthExceedsPanelWidth_StandardLayout(t *testing.T) {
 	fn.Depth = 100
 	fn.PanelWidth = 10
 	fn.Selected = true
-	if fn.Value() == "" {
+	val := fn.Value()
+	if val == "" {
 		t.Fatal("expected non-empty Value() when depth exceeds panel width")
+	}
+	// When depth exceeds panel width, the name is heavily truncated but the
+	// status icon should still be present.
+	if !strings.Contains(val, "+") {
+		t.Errorf("expected Value() to contain status icon '+', got %q", val)
 	}
 }
 

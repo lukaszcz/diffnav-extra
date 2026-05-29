@@ -1945,9 +1945,16 @@ func TestRenderOverlayPosition(t *testing.T) {
 
 func TestInitReturnsBatchCmd(t *testing.T) {
 	m := newTestMainModel(t)
+	// Fetch file tree should be part of init commands.
+	// Init returns a batch of commands including fetchFileTree, diffViewer.Init, and fetchRepoRoot.
 	cmd := m.Init()
 	if cmd == nil {
 		t.Fatal("expected Init to return a batch command")
+	}
+	// Execute the batch cmd and verify it produces at least one meaningful message.
+	msg := cmd()
+	if msg == nil {
+		t.Fatal("expected batch cmd to produce a non-nil message")
 	}
 }
 
@@ -1995,6 +2002,11 @@ func TestScheduleWatchTickReturnsNonNilCmd(t *testing.T) {
 	cmd := m.scheduleWatchTick()
 	if cmd == nil {
 		t.Fatal("expected scheduleWatchTick to return a non-nil tea.Cmd")
+	}
+	// Execute the cmd and verify it produces a watchTickMsg.
+	msg := cmd()
+	if _, ok := msg.(watchTickMsg); !ok {
+		t.Fatalf("expected watchTickMsg from scheduleWatchTick, got %T", msg)
 	}
 }
 
@@ -3974,6 +3986,10 @@ func TestViewRendersWithHiddenHeader(t *testing.T) {
 	if view == "" {
 		t.Fatal("expected non-empty view")
 	}
+	// Hidden header should not contain the diffnav logo text.
+	if strings.Contains(view, "diff") && strings.Contains(view, "nav") {
+		t.Error("expected header to be hidden but found diffnav branding in view")
+	}
 }
 
 func TestViewRendersWithHiddenFooter(t *testing.T) {
@@ -3996,6 +4012,10 @@ func TestViewRendersWithHelpOverlay(t *testing.T) {
 	if view == "" {
 		t.Fatal("expected non-empty view with help overlay")
 	}
+	// Help overlay should contain keybinding text.
+	if !strings.Contains(view, "quit") && !strings.Contains(view, "Quit") {
+		t.Error("expected help overlay to contain quit keybinding")
+	}
 }
 
 func TestViewRendersWithMessageOverlay(t *testing.T) {
@@ -4009,6 +4029,10 @@ func TestViewRendersWithMessageOverlay(t *testing.T) {
 	if view == "" {
 		t.Fatal("expected non-empty view with message overlay")
 	}
+	// Message overlay should contain the preamble content.
+	if !strings.Contains(view, "abc") && !strings.Contains(view, "Author") {
+		t.Error("expected message overlay to contain preamble content")
+	}
 }
 
 func TestViewRendersWithHiddenSidebar(t *testing.T) {
@@ -4019,6 +4043,11 @@ func TestViewRendersWithHiddenSidebar(t *testing.T) {
 	view := m.View().Content
 	if view == "" {
 		t.Fatal("expected non-empty view with hidden sidebar")
+	}
+	// With hidden sidebar, the diffViewer zone should still be present.
+	z := zone.Get(zoneDiffViewer)
+	if z.IsZero() {
+		t.Error("expected diffViewer zone to be registered with hidden sidebar")
 	}
 }
 
@@ -4035,6 +4064,11 @@ func TestViewRendersWithSearchActive(t *testing.T) {
 	view := m.View().Content
 	if view == "" {
 		t.Fatal("expected non-empty view with search active")
+	}
+	// Search box zone should be registered.
+	z := zone.Get(zoneSearchBox)
+	if z.IsZero() {
+		t.Error("expected search box zone to be registered with search active")
 	}
 }
 
@@ -6362,8 +6396,13 @@ func TestUpdateBackgroundDetectionAddsDiffViewerCmd(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	_ = result
-	// Verify that the diffViewer's SetDarkBackground was called and may have returned a cmd
+	// Verify that the auto-detected background was set.
+	if result.isDarkBackground == nil {
+		t.Fatal("expected isDarkBackground to be set after BackgroundColorMsg")
+	}
+	if *result.isDarkBackground {
+		t.Error("expected isDarkBackground=false for white background")
+	}
 	_ = cmds
 }
 
@@ -6466,8 +6505,11 @@ func TestHandleSearchResultClickIndexOutOfRangeCoverage(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	// Should return early without selecting anything
-	_ = result
+	// Should return early without selecting any file
+	// The resultsCursor should remain unchanged.
+	if result.resultsCursor != m.resultsCursor {
+		t.Errorf("expected resultsCursor unchanged (%d), got %d", m.resultsCursor, result.resultsCursor)
+	}
 }
 
 // ---------------------------------------------------------------------------
