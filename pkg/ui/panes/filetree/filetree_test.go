@@ -468,6 +468,13 @@ func TestViewRendersTree(t *testing.T) {
 	if view == "" {
 		t.Fatal("expected View() to return a non-empty string")
 	}
+	// The view should contain the file names that were added.
+	if !strings.Contains(view, "app/main.go") && !strings.Contains(view, "main.go") {
+		t.Error("expected view to contain main.go file")
+	}
+	if !strings.Contains(view, "docs/readme.md") && !strings.Contains(view, "readme.md") {
+		t.Error("expected view to contain readme.md file")
+	}
 }
 
 func TestViewEmptyModel(t *testing.T) {
