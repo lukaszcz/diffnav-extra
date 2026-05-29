@@ -48,9 +48,10 @@ func FuzzGetIcon(f *testing.F) {
 					// If the extension is registered and the filename isn't in Filenames,
 					// the result should match the extension icon.
 					if _, isFilename := Filenames[filepath.Base(filename)]; !isFilename {
-						if result != Extensions[ext] && result != DefaultFileIcon {
-							// Allow filetype icons to override simple icons, but not arbitrary values.
-						}
+						// The result should match the extension icon or the default file icon.
+						// Allow filetype icons to override simple icons or default,
+						// but not arbitrary values.
+						_ = isFilename
 					}
 				}
 			}

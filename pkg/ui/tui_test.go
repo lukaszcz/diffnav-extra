@@ -20,8 +20,8 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/dlvhdr/diffnav/pkg/config"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/dlvhdr/diffnav/pkg/config"
 
 	"github.com/dlvhdr/diffnav/pkg/dirnode"
 	"github.com/dlvhdr/diffnav/pkg/filenode"
@@ -5613,7 +5613,11 @@ func TestHandleDiffSelectionMotionNotSelecting(t *testing.T) {
 	}
 	// The diff viewer scroll position should not have changed.
 	if result.diffViewer.YOffset() != beforeYOffset {
-		t.Fatalf("expected YOffset to remain %d, got %d", beforeYOffset, result.diffViewer.YOffset())
+		t.Fatalf(
+			"expected YOffset to remain %d, got %d",
+			beforeYOffset,
+			result.diffViewer.YOffset(),
+		)
 	}
 	// HasSelection should still be false.
 	if result.diffViewer.HasSelection() {

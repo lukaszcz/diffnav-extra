@@ -102,7 +102,11 @@ func TestGetIcon_ExactFilenameBeatsExtension(t *testing.T) {
 	result := GetIcon("Dockerfile", false)
 	dockerfileIcon := Filenames["Dockerfile"]
 	if result != dockerfileIcon {
-		t.Errorf("expected exact-filename icon for Dockerfile, got %q (filename icon=%q)", result, dockerfileIcon)
+		t.Errorf(
+			"expected exact-filename icon for Dockerfile, got %q (filename icon=%q)",
+			result,
+			dockerfileIcon,
+		)
 	}
 }
 
