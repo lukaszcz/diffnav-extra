@@ -377,6 +377,10 @@ func TestRenderStandardLayout_NotSelected_Uncolored_NoStats(t *testing.T) {
 	if !strings.Contains(result, "test.go") {
 		t.Errorf("renderStandardLayout() = %q, should contain filename", result)
 	}
+	// ASCII icon for new file should be "+"
+	if !strings.Contains(result, "+") {
+		t.Errorf("renderStandardLayout() = %q, should contain '+' icon for new file", result)
+	}
 }
 
 func TestRenderStandardLayout_NotSelected_Colored_NoStats(t *testing.T) {
@@ -390,6 +394,10 @@ func TestRenderStandardLayout_NotSelected_Colored_NoStats(t *testing.T) {
 	if !strings.Contains(result, "test.go") {
 		t.Errorf("renderStandardLayout() = %q, should contain filename", result)
 	}
+	// ASCII icon for new file should be "+"
+	if !strings.Contains(result, "+") {
+		t.Errorf("renderStandardLayout() = %q, should contain '+' icon for new file", result)
+	}
 }
 
 func TestRenderStandardLayout_Selected_NoStats(t *testing.T) {
@@ -402,6 +410,12 @@ func TestRenderStandardLayout_Selected_NoStats(t *testing.T) {
 	result := fn.renderStandardLayout("test.go")
 	if !strings.Contains(result, "test.go") {
 		t.Errorf("renderStandardLayout() = %q, should contain filename", result)
+	}
+	// Selected output should differ from non-selected output
+	fn.Selected = false
+	notSelected := fn.renderStandardLayout("test.go")
+	if result == notSelected {
+		t.Errorf("selected and unselected render output should differ")
 	}
 }
 
@@ -512,6 +526,12 @@ func TestRenderFullLayout_Selected_NoStats(t *testing.T) {
 	if !strings.Contains(result, "test.go") {
 		t.Errorf("renderFullLayout() = %q, should contain filename", result)
 	}
+	// Selected output should differ from non-selected output
+	fn.Selected = false
+	notSelected := fn.renderFullLayout("test.go")
+	if result == notSelected {
+		t.Errorf("selected and unselected full layout render output should differ")
+	}
 }
 
 func TestRenderFullLayout_Colored_Selected_NoStats(t *testing.T) {
@@ -572,6 +592,12 @@ func TestRenderFullLayout_DeletedFile(t *testing.T) {
 	if !strings.Contains(result, "test.go") {
 		t.Errorf("renderFullLayout() for deleted file = %q, should contain filename", result)
 	}
+	// Deleted file output should differ from new file output
+	fnNew := makeFileNode(newFile(withIsNew), cfg)
+	newResult := fnNew.renderFullLayout("test.go")
+	if result == newResult {
+		t.Errorf("deleted and new file render output should differ")
+	}
 }
 
 func TestRenderFullLayout_ModifiedFile(t *testing.T) {
@@ -583,6 +609,15 @@ func TestRenderFullLayout_ModifiedFile(t *testing.T) {
 	result := fn.renderFullLayout("test.go")
 	if !strings.Contains(result, "test.go") {
 		t.Errorf("renderFullLayout() for modified file = %q, should contain filename", result)
+	}
+	// Modified file output should differ from both new and deleted
+	fnNew := makeFileNode(newFile(withIsNew), cfg)
+	fnDel := makeFileNode(newFile(withIsDelete), cfg)
+	if result == fnNew.renderFullLayout("test.go") {
+		t.Errorf("modified and new file render output should differ")
+	}
+	if result == fnDel.renderFullLayout("test.go") {
+		t.Errorf("modified and deleted file render output should differ")
 	}
 }
 

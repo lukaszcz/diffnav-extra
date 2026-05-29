@@ -76,15 +76,19 @@ func TestUpdateNonWindowSizeMsg(t *testing.T) {
 func TestNaturalWidthWithoutKeys(t *testing.T) {
 	m := New()
 	nw := m.naturalWidth()
-	// naturalWidth with no keys set should not panic and returns some value
-	_ = nw
+	// naturalWidth with no keys set should return 0 (no columns to render)
+	if nw != 0 {
+		t.Errorf("expected naturalWidth 0 with no keys, got %d", nw)
+	}
 }
 
 func TestViewWithoutKeys(t *testing.T) {
 	m := New()
 	view := m.View()
-	// Should produce output without panicking; can be empty or whitespace
-	_ = view
+	// Without keys, the view should be empty or contain only whitespace
+	if len(strings.TrimSpace(view)) > 0 {
+		t.Errorf("expected empty view with no keys, got %q", view)
+	}
 }
 
 func TestViewWithKeys(t *testing.T) {
