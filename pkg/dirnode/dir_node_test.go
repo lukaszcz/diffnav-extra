@@ -22,8 +22,7 @@ func TestDirNode_Fields(t *testing.T) {
 
 func TestDirNode_NilReceiver(t *testing.T) {
 	var d *DirNode
-	// Nil receiver should not panic; String() dereferences the pointer,
-	// so this documents the expected panic if called on nil.
+	// String() dereferences the nil pointer, so calling it on a nil receiver panics.
 	defer func() {
 		if r := recover(); r == nil {
 			t.Error("expected panic when calling String() on nil *DirNode")

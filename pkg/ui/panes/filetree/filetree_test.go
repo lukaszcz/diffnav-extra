@@ -473,7 +473,8 @@ func TestViewEmptyModel(t *testing.T) {
 	cfg := config.DefaultConfig()
 	m := New(cfg)
 	view := m.View()
-	// Empty model should still return a string (possibly empty)
+	// An empty model with no files should render an empty or minimal view
+	// (not panic). At minimum, calling View() should succeed.
 	_ = view
 }
 
@@ -776,8 +777,11 @@ func TestNodeDescendantDiffsFileNilFile(t *testing.T) {
 func TestSetCursorNoScrollEmptyFiles(t *testing.T) {
 	cfg := config.DefaultConfig()
 	m := New(cfg)
-	// Should not panic
 	m.SetCursorNoScroll(5)
+	// With no files, CurrNodePath should be empty
+	if m.CurrNodePath() != "" {
+		t.Fatalf("expected empty path with empty tree, got %q", m.CurrNodePath())
+	}
 }
 
 func TestSetCursorNoScrollPreservesViewport(t *testing.T) {
@@ -795,15 +799,22 @@ func TestSetCursorNoScrollPreservesViewport(t *testing.T) {
 
 func TestClickNodeNil(t *testing.T) {
 	m := newTestTreeModel([]string{"a.txt"})
+	beforePath := m.CurrNodePath()
 	m.ClickNode(nil)
-	// Should not panic
+	// Clicking nil should not change selection
+	if m.CurrNodePath() != beforePath {
+		t.Fatalf("expected path to stay %q after nil click, got %q", beforePath, m.CurrNodePath())
+	}
 }
 
 func TestClickNodeEmptyFiles(t *testing.T) {
 	cfg := config.DefaultConfig()
 	m := New(cfg)
 	m.ClickNode(nil)
-	// Should not panic
+	// With empty files, should not panic and CurrNodePath should be empty
+	if m.CurrNodePath() != "" {
+		t.Fatalf("expected empty path with no files, got %q", m.CurrNodePath())
+	}
 }
 
 func TestClickNodeSelectsFile(t *testing.T) {
@@ -824,15 +835,26 @@ func TestClickNodeSelectsFile(t *testing.T) {
 
 func TestClickNodeIconNil(t *testing.T) {
 	m := newTestTreeModel([]string{"a.txt"})
+	beforePath := m.CurrNodePath()
 	m.ClickNodeIcon(nil)
-	// Should not panic
+	// Clicking nil icon should not change state
+	if m.CurrNodePath() != beforePath {
+		t.Fatalf(
+			"expected path to stay %q after nil icon click, got %q",
+			beforePath,
+			m.CurrNodePath(),
+		)
+	}
 }
 
 func TestClickNodeIconEmptyFiles(t *testing.T) {
 	cfg := config.DefaultConfig()
 	m := New(cfg)
 	m.ClickNodeIcon(nil)
-	// Should not panic
+	// With empty files, should not panic
+	if m.CurrNodePath() != "" {
+		t.Fatalf("expected empty path with no files, got %q", m.CurrNodePath())
+	}
 }
 
 func TestClickNodeIconOnFileNodeDoesNotToggle(t *testing.T) {
@@ -1009,7 +1031,9 @@ func TestUpdateExpandNode(t *testing.T) {
 	msg := tea.KeyPressMsg(tea.Key{Text: "l", Code: 'l'})
 	m2, cmd := m.Update(msg)
 	_ = cmd
-	_ = m2
+	if !nodeByPath(t, m2, "app").IsOpen() {
+		t.Fatal("expected app to be open after ExpandNode key")
+	}
 }
 
 func TestUpdateCollapseNode(t *testing.T) {
@@ -1022,7 +1046,9 @@ func TestUpdateCollapseNode(t *testing.T) {
 
 	msg := tea.KeyPressMsg(tea.Key{Text: "h", Code: 'h'})
 	m2, _ := m.Update(msg)
-	_ = m2
+	if nodeByPath(t, m2, "app").IsOpen() {
+		t.Fatal("expected app to be closed after CollapseNode key")
+	}
 }
 
 func TestUpdateToggleNode(t *testing.T) {
@@ -1033,8 +1059,10 @@ func TestUpdateToggleNode(t *testing.T) {
 	wasOpen := app.IsOpen()
 	msg := tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter})
 	m2, _ := m.Update(msg)
-	_ = m2
-	_ = wasOpen
+	nowOpen := nodeByPath(t, m2, "app").IsOpen()
+	if nowOpen == wasOpen {
+		t.Fatalf("expected toggle to change open state from %v to %v", wasOpen, !wasOpen)
+	}
 }
 
 // --- getDirIcons ---
@@ -1235,14 +1263,22 @@ func TestNextFileAtLastFile(t *testing.T) {
 	m := newTestTreeModel([]string{"a.txt", "b.txt"})
 	// Move to last file.
 	m.GoToBottom()
-	_ = m.NextFile() // may return false at end; exercise path without panic
+	result := m.NextFile()
+	// At the last file, NextFile should return false
+	if result {
+		t.Fatal("expected NextFile to return false at last file")
+	}
 }
 
 // Test PrevFile returns false when no files before current.
 func TestPrevFileAtFirstFile(t *testing.T) {
 	m := newTestTreeModel([]string{"a.txt", "b.txt"})
 	m.GoToTop()
-	_ = m.PrevFile()
+	result := m.PrevFile()
+	// At the first file, PrevFile should return false
+	if result {
+		t.Fatal("expected PrevFile to return false at first file")
+	}
 }
 
 // Test NodeDescendantDiffs with a string-valued root node.
@@ -1267,7 +1303,9 @@ func TestTruncateTreeWithDirChild(t *testing.T) {
 	if tr2 == nil {
 		t.Fatal("expected non-nil tree")
 	}
-	_ = numChildren
+	if numChildren < 0 {
+		t.Fatalf("expected non-negative numChildren, got %d", numChildren)
+	}
 }
 
 // Test collapseTree with empty children.
@@ -1315,10 +1353,13 @@ func TestDirectoryIconStartColumnAdditionalDepths(t *testing.T) {
 	grandchild := tree.Root(&dirnode.DirNode{Name: "z", FullPath: "a/b/x/y/z"})
 	child.Child(grandchild)
 	n.Child(child)
-	// The tree library tracks depth internally; we can't easily set it.
-	// Just call the function and ensure it doesn't panic.
+	// The tree library tracks depth internally; directoryIconStartColumn
+	// should return non-negative values for all nodes.
 	for _, node := range n.AllNodes() {
-		_ = directoryIconStartColumn(node)
+		col := directoryIconStartColumn(node)
+		if col < 0 {
+			t.Fatalf("expected non-negative icon start column, got %d", col)
+		}
 	}
 }
 

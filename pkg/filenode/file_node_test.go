@@ -761,19 +761,27 @@ func TestHidden_ReturnsFalse(t *testing.T) {
 
 func TestSetHidden_NoOp(t *testing.T) {
 	fn := makeFileNode(newFile(), defaultCfg())
-	// Should not panic
+	before := fn.Value()
 	fn.SetHidden(true)
 	fn.SetHidden(false)
+	// SetHidden is a no-op; Value() should be unaffected.
+	if fn.Value() != before {
+		t.Fatal("expected SetHidden to be a no-op")
+	}
 }
 
 // --- SetValue() ---
 
 func TestSetValue_NoOp(t *testing.T) {
 	fn := makeFileNode(newFile(), defaultCfg())
-	// Should not panic with various types
+	before := fn.Value()
 	fn.SetValue("something")
 	fn.SetValue(42)
 	fn.SetValue(nil)
+	// SetValue is a no-op; Value() should be unaffected.
+	if fn.Value() != before {
+		t.Fatal("expected SetValue to be a no-op")
+	}
 }
 
 // --- Edge cases: PanelWidth and Depth ---
@@ -784,8 +792,9 @@ func TestValue_PanelWidthZero_StandardLayout(t *testing.T) {
 	cfg.UI.ColorFileNames = false
 	fn := makeFileNode(newFile(withIsNew), cfg)
 	fn.PanelWidth = 0
-	// Should not panic
-	_ = fn.Value()
+	if fn.Value() == "" {
+		t.Fatal("expected non-empty Value() with PanelWidth=0")
+	}
 }
 
 func TestValue_PanelWidthZero_Selected_StandardLayout(t *testing.T) {
@@ -795,8 +804,9 @@ func TestValue_PanelWidthZero_Selected_StandardLayout(t *testing.T) {
 	fn := makeFileNode(newFile(withIsNew), cfg)
 	fn.PanelWidth = 0
 	fn.Selected = true
-	// Should not panic
-	_ = fn.Value()
+	if fn.Value() == "" {
+		t.Fatal("expected non-empty Value() with PanelWidth=0 and selected")
+	}
 }
 
 func TestValue_PanelWidthZero_FullLayout(t *testing.T) {
@@ -805,8 +815,9 @@ func TestValue_PanelWidthZero_FullLayout(t *testing.T) {
 	cfg.UI.ColorFileNames = false
 	fn := makeFileNode(newFile(withIsNew), cfg)
 	fn.PanelWidth = 0
-	// Should not panic
-	_ = fn.Value()
+	if fn.Value() == "" {
+		t.Fatal("expected non-empty Value() with PanelWidth=0 full layout")
+	}
 }
 
 func TestValue_PanelWidthZero_Selected_FullLayout(t *testing.T) {
@@ -816,8 +827,9 @@ func TestValue_PanelWidthZero_Selected_FullLayout(t *testing.T) {
 	fn := makeFileNode(newFile(withIsNew), cfg)
 	fn.PanelWidth = 0
 	fn.Selected = true
-	// Should not panic
-	_ = fn.Value()
+	if fn.Value() == "" {
+		t.Fatal("expected non-empty Value() with PanelWidth=0 selected full layout")
+	}
 }
 
 func TestValue_DepthExceedsPanelWidth_StandardLayout(t *testing.T) {
@@ -829,8 +841,9 @@ func TestValue_DepthExceedsPanelWidth_StandardLayout(t *testing.T) {
 	fn.Depth = 100
 	fn.PanelWidth = 10
 	fn.Selected = true
-	// Should not panic
-	_ = fn.Value()
+	if fn.Value() == "" {
+		t.Fatal("expected non-empty Value() when depth exceeds panel width")
+	}
 }
 
 func TestValue_DepthExceedsPanelWidth_FullLayout_Selected(t *testing.T) {
@@ -842,8 +855,9 @@ func TestValue_DepthExceedsPanelWidth_FullLayout_Selected(t *testing.T) {
 	fn.Depth = 100
 	fn.PanelWidth = 10
 	fn.Selected = true
-	// Should not panic
-	_ = fn.Value()
+	if fn.Value() == "" {
+		t.Fatal("expected non-empty Value() when depth exceeds panel width full layout selected")
+	}
 }
 
 func TestValue_DepthExceedsPanelWidth_FullLayout_NotSelected(t *testing.T) {
@@ -855,8 +869,11 @@ func TestValue_DepthExceedsPanelWidth_FullLayout_NotSelected(t *testing.T) {
 	fn.Depth = 100
 	fn.PanelWidth = 10
 	fn.Selected = false
-	// Should not panic
-	_ = fn.Value()
+	if fn.Value() == "" {
+		t.Fatal(
+			"expected non-empty Value() when depth exceeds panel width full layout not selected",
+		)
+	}
 }
 
 func TestRenderStandardLayout_LargeDepth_Unselected(t *testing.T) {
@@ -935,16 +952,4 @@ func TestValue_FullLayout_NoAnsiReset(t *testing.T) {
 	}
 }
 
-// --- SetHidden / SetValue coverage ---
-
-func TestSetHidden(t *testing.T) {
-	fn := makeFileNode(newFile(), defaultCfg())
-	fn.SetHidden(true)
-	fn.SetHidden(false)
-}
-
-func TestSetValue(t *testing.T) {
-	fn := makeFileNode(newFile(), defaultCfg())
-	fn.SetValue("hello")
-	fn.SetValue(42)
-}
+// --- SetHidden / SetValue coverage (covered by TestSetHidden_NoOp and TestSetValue_NoOp) ---

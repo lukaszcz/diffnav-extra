@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -708,7 +709,17 @@ func TestExecuteCallsExitOnError(t *testing.T) {
 
 	cmd := execTestCommand(t, "TEST_EXECUTE_ERR", "1")
 	// Unknown flag causes an error, Execute should call os.Exit(1).
-	cmd.Run() // Will exit with code 1, but we dont check since its a subprocess.
+	err := cmd.Run()
+	if err == nil {
+		t.Fatal("expected subprocess to exit with non-zero status")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected *exec.ExitError, got %T: %v", err, err)
+	}
+	if exitErr.ExitCode() == 0 {
+		t.Fatalf("expected exit code 1, got %d", exitErr.ExitCode())
+	}
 }
 
 func TestExecuteHelpFlag(t *testing.T) {
@@ -778,7 +789,9 @@ func TestRunClosureCallsExtractedFunctions(t *testing.T) {
 
 	rootCmd.Run(cmd, []string{})
 
-	_ = exitCalled
+	if exitCalled {
+		t.Error("expected exitCalled to remain false on successful Run closure")
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1003,13 +1016,25 @@ func TestRunProgramProgramRunSuccess(t *testing.T) {
 
 func TestExecuteCallsOsExit(t *testing.T) {
 	// Execute() calls os.Exit(1) when execute() returns an error.
-	// We can't easily test this without a subprocess, but we can test the
-	// execute() function's error handling.
-	// The ThemeFunc closure always runs in execute() so we get coverage there.
-	err := execute(context.Background())
-	// Without flags, rootCmd will look for args in os.Args, which may or may not
-	// trigger the Run closure depending on whether we set args.
-	_ = err
+	// Test via subprocess that an invalid flag triggers exit code 1.
+	if os.Getenv("TEST_EXECUTE_EXIT1") == "1" {
+		rootCmd.SetArgs([]string{"--invalid-flag-for-exit-test"})
+		Execute()
+		return
+	}
+
+	cmd := execTestCommand(t, "TEST_EXECUTE_EXIT1", "1")
+	err := cmd.Run()
+	if err == nil {
+		t.Fatal("expected subprocess to exit with non-zero status")
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected *exec.ExitError, got %T: %v", err, err)
+	}
+	if exitErr.ExitCode() == 0 {
+		t.Fatalf("expected non-zero exit code, got %d", exitErr.ExitCode())
+	}
 }
 
 func TestReadStdinInputNonUnifiedDiffNoNewline(t *testing.T) {

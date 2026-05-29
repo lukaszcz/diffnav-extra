@@ -69,6 +69,16 @@ func TestIsUnifiedDiff(t *testing.T) {
 			input: "",
 			want:  false,
 		},
+		{
+			name:  "false positive: text containing diff --git",
+			input: "This is a note about the diff --git command and how it works",
+			want:  false, // prose with "diff --git" is not a real diff
+		},
+		{
+			name:  "false positive: diff --git in prose",
+			input: "We ran diff --git to compare two branches yesterday.",
+			want:  false, // prose with "diff --git" is not a real diff
+		},
 	}
 
 	for _, tc := range cases {

@@ -2251,7 +2251,9 @@ func TestRunDelta_KilledProcess(t *testing.T) {
 		io.WriteString(w, "diff\n")
 		return nil
 	})
-	_ = err
+	if err == nil {
+		t.Fatal("expected error when delta process is killed by context timeout")
+	}
 }
 
 // runDelta: StdinPipe error path — injected via stdinPipeFunc var.
@@ -2352,10 +2354,11 @@ func TestApplyHighlight_ClampedToEmptyRange(t *testing.T) {
 
 	vpView := m.vp.View()
 	out := m.applyHighlight(vpView)
-	// With a >= b, no reverse-video should be applied to line 0.
-	// The output may still contain \x1b[7m from other viewport rendering,
-	// so verify the line itself is not reversed.
-	_ = out
+	// With a >= b, no reverse-video should be applied, so
+	// the output should be identical to the input.
+	if out != vpView {
+		t.Fatal("expected output to equal input when highlight range is clamped to empty")
+	}
 }
 
 // selectedText: panic recovery returns empty string instead of crashing.
