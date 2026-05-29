@@ -2457,6 +2457,42 @@ func TestRefreshColumnDetection_PanicInSideContentCols(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// HasFile / HasDir / CurrentFilePath
+// ---------------------------------------------------------------------------
+
+func TestHasFile_CurrentFilePath(t *testing.T) {
+	m := New(false, "dark")
+	if m.HasFile() {
+		t.Error("expected HasFile=false with no file set")
+	}
+	if m.HasDir() {
+		t.Error("expected HasDir=false with no dir set")
+	}
+	if m.CurrentFilePath() != "" {
+		t.Errorf("expected empty CurrentFilePath with no file, got %q", m.CurrentFilePath())
+	}
+
+	m.file = &cachedNode{path: "main.go", files: []*gitdiff.File{{NewName: "main.go"}}}
+	if !m.HasFile() {
+		t.Error("expected HasFile=true after setting file")
+	}
+	if m.CurrentFilePath() != "main.go" {
+		t.Errorf("expected CurrentFilePath=main.go, got %q", m.CurrentFilePath())
+	}
+}
+
+func TestHasDir(t *testing.T) {
+	m := New(false, "dark")
+	m.dir = &cachedNode{path: "src", additions: 5, deletions: 1}
+	if !m.HasDir() {
+		t.Error("expected HasDir=true after setting dir")
+	}
+	if m.HasFile() {
+		t.Error("expected HasFile=false when dir is set")
+	}
+}
+
 // DiffFile with renderer error returns ErrMsg.
 func TestDiffFile_RendererError(t *testing.T) {
 	r := deltaRenderer{
