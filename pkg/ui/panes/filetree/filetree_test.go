@@ -628,8 +628,11 @@ func TestSetCursorByPathDirectory(t *testing.T) {
 func TestSetCursorByPathEmptyFiles(t *testing.T) {
 	cfg := config.DefaultConfig()
 	m := New(cfg)
-	// Should not panic with no files
 	m.SetCursorByPath("any/path")
+	// With no files, path should remain empty
+	if m.CurrNodePath() != "" {
+		t.Fatalf("expected empty path with no files, got %q", m.CurrNodePath())
+	}
 }
 
 // --- SetSize / Width ---
@@ -656,8 +659,10 @@ func TestWidth(t *testing.T) {
 func TestViewportYOffset(t *testing.T) {
 	m := newTestTreeModel([]string{"a.txt"})
 	offset := m.ViewportYOffset()
-	// Initially should be 0 or some default
-	_ = offset
+	// Initially should be 0
+	if offset != 0 {
+		t.Fatalf("expected initial YOffset of 0, got %d", offset)
+	}
 }
 
 // --- GetCurrNode / GetCurrNodeDesendantDiffs ---
