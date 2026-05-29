@@ -1785,10 +1785,14 @@ func TestIsSBSContentLine(t *testing.T) {
 	}
 }
 
-// cancelPendingRender() with no active render does not panic.
+// cancelPendingRender() with no active render does not panic and returns cleanly.
 func TestCancelPendingRender_NoActiveRender(t *testing.T) {
 	m := New(false, "dark")
 	m.cancelPendingRender() // Should not panic
+	// Verify the cancel function was cleared (nil when no render is active)
+	if m.cancelRender != nil {
+		t.Error("expected cancelRender to be nil after cancelPendingRender with no active render")
+	}
 }
 
 // SetSideBySide() updates the flag.
@@ -2196,13 +2200,11 @@ func TestEndSelection_NotActive(t *testing.T) {
 }
 
 // runDelta: context canceled after process starts covers the ctxErr path.
-// We use a timeout context with a very short timeout so the command
-// starts but doesn't have time to complete.
+// We use an already-canceled context so the ctxErr path is exercised deterministically.
 func TestRunDelta_ContextCanceledMidRun(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-	defer cancel()
-	// Feeding a large input makes delta take longer, giving the timeout
-	// a chance to fire before the process finishes.
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel immediately so the context is already expired when runDelta checks.
+	cancel()
 	_, err := runDelta(ctx, []string{"--paging=never"}, func(w io.Writer) error {
 		for i := 0; i < 10000; i++ {
 			io.WriteString(
@@ -2213,11 +2215,11 @@ func TestRunDelta_ContextCanceledMidRun(t *testing.T) {
 		return nil
 	})
 	if err == nil {
-		// It's OK if delta finishes before timeout.
-		return
+		t.Fatal("expected error when context is already canceled")
 	}
-	// We reached one of the error paths — that's what we wanted.
-	_ = err
+	if ctx.Err() == nil {
+		t.Fatal("expected context to be canceled")
+	}
 }
 
 // runDelta: bad args cause delta to exit with an error, covering the

@@ -2,6 +2,7 @@ package filetree
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"charm.land/bubbles/v2/tree"
@@ -473,9 +474,10 @@ func TestViewEmptyModel(t *testing.T) {
 	cfg := config.DefaultConfig()
 	m := New(cfg)
 	view := m.View()
-	// An empty model with no files should render an empty or minimal view
-	// (not panic). At minimum, calling View() should succeed.
-	_ = view
+	// An empty model with no files should render an empty or whitespace-only view.
+	if len(strings.TrimSpace(view)) > 0 {
+		t.Errorf("expected empty view for empty model, got %q", view)
+	}
 }
 
 // --- Down / Up ---
