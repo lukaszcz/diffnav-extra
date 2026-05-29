@@ -1361,12 +1361,17 @@ func TestDirectoryIconStartColumnAdditionalDepths(t *testing.T) {
 	child.Child(grandchild)
 	n.Child(child)
 	// The tree library tracks depth internally; directoryIconStartColumn
-	// should return non-negative values for all nodes.
+	// should return increasing values for deeper nodes.
+	prevCol := -1
 	for _, node := range n.AllNodes() {
 		col := directoryIconStartColumn(node)
 		if col < 0 {
 			t.Fatalf("expected non-negative icon start column, got %d", col)
 		}
+		if col < prevCol {
+			t.Fatalf("expected icon start column to not decrease, got %d after %d", col, prevCol)
+		}
+		prevCol = col
 	}
 }
 

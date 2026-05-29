@@ -893,8 +893,6 @@ func TestSetupLoggingGetwdError(t *testing.T) {
 
 func TestSetupLoggingDebugCloseError(t *testing.T) {
 	// This tests the defer close of the log file.
-	// The log file close error path is hard to trigger since os.File.Close()
-	// rarely fails. We verify the code path exists by exercising the normal path.
 	tmpDir := t.TempDir()
 	origDir, _ := os.Getwd()
 	if err := os.Chdir(tmpDir); err != nil {
@@ -904,6 +902,10 @@ func TestSetupLoggingDebugCloseError(t *testing.T) {
 
 	t.Setenv("DEBUG", "true")
 	cleanup := setupLogging()
+	// Verify debug.log was created.
+	if _, err := os.Stat("debug.log"); err != nil {
+		t.Fatalf("expected debug.log to exist after setupLogging in debug mode: %v", err)
+	}
 	cleanup()
 	// The cleanup function closes the log file.
 }
