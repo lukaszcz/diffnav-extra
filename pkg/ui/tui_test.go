@@ -2218,13 +2218,20 @@ func TestMoveToFileNoMovement(t *testing.T) {
 		}
 	}
 
+	// Navigate up to the very first file node.
+	for i := 0; i < maxTries; i++ {
+		if !m.fileTree.PrevFile() {
+			break
+		}
+	}
+
 	beforePath := m.fileTree.CurrNodePath()
-	// Try moving to prev file when at the first file (may not move)
+	// Try moving to prev file when at the first file (should not move)
 	m, _ = m.moveToFile(-1)
 	afterPath := m.fileTree.CurrNodePath()
-	// At the first file, moveToFile(-1) may or may not change the path
-	_ = beforePath
-	_ = afterPath
+	if beforePath != afterPath {
+		t.Errorf("expected path to stay at %q after moveToFile(-1) at first file, got %q", beforePath, afterPath)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -2313,13 +2320,26 @@ func TestSetNodeDiffFileNode(t *testing.T) {
 	if node == nil {
 		t.Skip("no file node found in tree")
 	}
-	if _, ok := node.GivenValue().(*filenode.FileNode); !ok {
+	fn, ok := node.GivenValue().(*filenode.FileNode)
+	if !ok {
 		t.Skip("could not find a file node")
 	}
 
-	_, cmd := m.setNodeDiff(node)
+	result, cmd := m.setNodeDiff(node)
 	// cmd may be nil (cached) or non-nil (needs render)
 	_ = cmd
+
+	// Verify the diffViewer was updated to display the file's data.
+	if !result.diffViewer.HasFile() {
+		t.Fatal("expected diffViewer to have file after setNodeDiff with a FileNode")
+	}
+	expectedPath := filenode.GetFileName(fn.File)
+	if result.diffViewer.CurrentFilePath() != expectedPath {
+		t.Errorf("expected diffViewer file path=%q, got %q", expectedPath, result.diffViewer.CurrentFilePath())
+	}
+	if result.diffViewer.HasDir() {
+		t.Error("expected diffViewer to not have dir when a file is displayed")
+	}
 }
 
 func TestSetNodeDiffDirNode(t *testing.T) {
@@ -2330,8 +2350,16 @@ func TestSetNodeDiffDirNode(t *testing.T) {
 	for i := 0; i < maxTries && node != nil; i++ {
 		switch node.GivenValue().(type) {
 		case *dirnode.DirNode, string:
-			_, cmd := m.setNodeDiff(node)
+			result, cmd := m.setNodeDiff(node)
 			_ = cmd
+
+			// Verify the diffViewer was updated with directory data.
+			if !result.diffViewer.HasDir() {
+				t.Fatal("expected diffViewer to have dir after setNodeDiff with DirNode")
+			}
+			if result.diffViewer.HasFile() {
+				t.Error("expected diffViewer to not have file when a dir is displayed")
+			}
 			return
 		}
 		m.fileTree.Down()
@@ -3642,8 +3670,10 @@ func TestRelativeTimeExactly30Days(t *testing.T) {
 
 func TestRelativeTimeFuture(t *testing.T) {
 	result := relativeTime(time.Now().Add(5 * time.Minute))
-	// Future times should still produce a result without panicking
-	_ = result
+	// Future times produce negative durations, which are < time.Minute so return "now"
+	if result != "now" {
+		t.Errorf("expected 'now' for future time, got %q", result)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -5994,12 +6024,20 @@ func TestFetchFileTreeWithInvalidInput(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestResolveBranchEmptyHashReturnsEmpty(t *testing.T) {
-	// "commit " with just space-terminated empty hash
-	// After TrimPrefix("commit "), the hash is "" since there's only whitespace or nothing
-	preamble := "commit "
-	result := resolveBranch(preamble)
-	if result != "" {
-		t.Fatalf("expected empty branch for commit with empty hash, got %q", result)
+	tests := []struct {
+		name     string
+		preamble string
+	}{
+		{"single_space", "commit "},
+		{"double_space", "commit  "},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := resolveBranch(tc.preamble)
+			if result != "" {
+				t.Fatalf("expected empty branch for commit with empty hash %q, got %q", tc.preamble, result)
+			}
+		})
 	}
 }
 
@@ -6350,15 +6388,6 @@ func TestFetchFileTreeParseError(t *testing.T) {
 // resolveBranch: empty hash after commit line (lines 739-741)
 // ---------------------------------------------------------------------------
 
-func TestResolveBranchCommitLineEmptyHashCoverage(t *testing.T) {
-	// This specifically tests the path where the commit line has "commit " with
-	// just spaces/empty after trim, causing hash == "".
-	result := resolveBranch("commit  ")
-	if result != "" {
-		t.Fatalf("expected empty result for commit with empty hash, got %q", result)
-	}
-}
-
 // ---------------------------------------------------------------------------
 // openInEditor: closure body (lines 1162-1164)
 // ---------------------------------------------------------------------------
@@ -6504,44 +6533,6 @@ func TestHandleDiffSelectionMotionClampedXEdgeCases(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// handleDiffSelectionMotion: diffPanePoint returns !ok (lines 1488-1490)
-// ---------------------------------------------------------------------------
-
-func TestHandleDiffSelectionMotionDiffPanePointFailsCoverage(t *testing.T) {
-	m := newTestMainModel(t)
-	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 160, Height: 40})
-
-	m.diffViewer.SetContent(strings.Repeat("line\n", 500))
-	m.diffViewer.StartSelection(diffviewer.Point{Line: 5, Col: 0})
-
-	_ = m.View().Content
-
-	z := zone.Get(zoneDiffViewer)
-	if z.IsZero() {
-		t.Fatal("zoneDiffViewer not registered after View()")
-	}
-
-	// Move cursor within the zone X bounds but in the dir-header area
-	// This will make paneY < DirHeaderHeight, so diffPanePoint returns ok=false
-	// But paneY is still in the default range for handleDiffSelectionMotion
-	// However, our paneY at z.StartY is < DirHeaderHeight so the "above viewport" branch runs
-	// We need paneY >= DirHeaderHeight but < 2*DirHeaderHeight so it enters the
-	// default branch but diffPanePoint fails
-	// Actually, the default branch runs when paneY is between DirHeaderHeight and
-	// DirHeaderHeight+vpHeight. diffPanePoint should succeed in this range.
-	// For diffPanePoint to fail in the default branch, the mouse Y must be different from
-	// what diffPanePoint expects. Since diffPanePoint checks InBounds first,
-	// we need a scenario where the mouse is in-bounds for handleDiffSelectionMotion's
-	// manual calculation but out-of-bounds for diffPanePoint's InBounds check.
-	// Since both use the same zone coordinates, this shouldn't happen.
-	// The only case for !ok is paneY < DirHeaderHeight in diffPanePoint, which
-	// is handled by the "above" branch instead.
-	// So the !ok path at line 1488 is practically unreachable via the default branch.
-	// Let's just exercise the code path to ensure it doesn't panic.
-	_ = z
-}
-
-// ---------------------------------------------------------------------------
 // fetchFileTree: gitdiff parse error with truly bad input (lines 707-709)
 // ---------------------------------------------------------------------------
 
@@ -6678,17 +6669,6 @@ func TestUpdateBackgroundDetectionDiffViewerReturnsCmd(t *testing.T) {
 	// Execute any commands returned to trigger diffViewer diffs
 	if cmds != nil {
 		_ = cmds()
-	}
-}
-
-func TestResolveBranchEmptyHash(t *testing.T) {
-	// Test the `if hash == "" { return "" }` branch.
-	// A commit line that is exactly "commit " (with trailing space stripped by TrimSpace)
-	// produces hash="" after TrimPrefix.
-	preamble := "commit "
-	result := resolveBranch(preamble)
-	if result != "" {
-		t.Fatalf("expected empty branch for empty hash, got %q", result)
 	}
 }
 

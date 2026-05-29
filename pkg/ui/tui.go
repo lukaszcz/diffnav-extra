@@ -1482,9 +1482,8 @@ func (m mainModel) handleDiffSelectionMotion(msg tea.MouseMsg) (tea.Model, tea.C
 	default:
 		// diffPanePoint is guaranteed to succeed here because we already
 		// validated the mouse is within the diff zone bounds and paneY >= DirHeaderHeight.
-		if point, ok := m.diffPanePoint(msg); ok {
-			m.diffViewer.ExtendSelection(point)
-		}
+		point, _ := m.diffPanePoint(msg)
+		m.diffViewer.ExtendSelection(point)
 	}
 	return m, nil
 }

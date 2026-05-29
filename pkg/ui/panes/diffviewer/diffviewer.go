@@ -734,6 +734,24 @@ func (m *Model) DebugSelection() (anchor, head Point, band [2]int, active bool) 
 	return m.sel.anchor, m.sel.head, m.sel.colBand, m.sel.active
 }
 
+// HasFile returns true when a file patch is currently displayed.
+func (m *Model) HasFile() bool {
+	return m.file != nil
+}
+
+// HasDir returns true when a directory patch is currently displayed.
+func (m *Model) HasDir() bool {
+	return m.dir != nil
+}
+
+// CurrentFilePath returns the path of the currently displayed file, or "" if none.
+func (m *Model) CurrentFilePath() string {
+	if m.file == nil {
+		return ""
+	}
+	return m.file.path
+}
+
 // selectedText extracts the ANSI-stripped plaintext under the current
 // selection from the cached diff content. Returns "" when no content is
 // loaded or the relevant cached node has no diff text.

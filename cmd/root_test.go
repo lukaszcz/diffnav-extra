@@ -249,8 +249,9 @@ func TestBuildConfigWatch(t *testing.T) {
 func TestSetupLoggingNonDebug(t *testing.T) {
 	t.Setenv("DEBUG", "false")
 	cleanup := setupLogging()
+	// In non-debug mode, cleanup is a no-op; calling it twice must not panic.
 	cleanup()
-	// Just verify it doesn't panic.
+	cleanup()
 }
 
 func TestSetupLoggingDebugMode(t *testing.T) {
@@ -660,7 +661,19 @@ func TestRunProgramTTYSameFileClose(t *testing.T) {
 	defer func() { exitFunc = origExit }()
 	exitFunc = func(int) {}
 
+	closeCallCount := 0
+	origCloseFile := closeFile
+	defer func() { closeFile = origCloseFile }()
+	closeFile = func(f *os.File) error {
+		closeCallCount++
+		return f.Close()
+	}
+
 	runProgram("input", config.DefaultConfig())
+
+	if closeCallCount != 1 {
+		t.Errorf("expected closeFile called once for same-file TTY, got %d calls", closeCallCount)
+	}
 }
 
 func TestRunProgramTTYDifferentFilesCloseError(t *testing.T) {
@@ -928,18 +941,43 @@ func TestReadStdinInputWriteRuneError(t *testing.T) {
 func TestCloseTTYSameFile(t *testing.T) {
 	f, _, _ := os.Pipe()
 
+	closeCallCount := 0
 	origCloseFile := closeFile
 	defer func() { closeFile = origCloseFile }()
-	closeFile = func(f *os.File) error { return f.Close() }
+	closeFile = func(file *os.File) error {
+		closeCallCount++
+		return file.Close()
+	}
 
 	closeTTY(f, f)
+
+	if closeCallCount != 1 {
+		t.Errorf("expected closeFile called once for same-file TTY, got %d calls", closeCallCount)
+	}
 }
 
 func TestCloseTTYDifferentFiles(t *testing.T) {
 	ttyIn, _, _ := os.Pipe()
 	_, ttyOut, _ := os.Pipe()
 
+	closeCallCount := 0
+	closedFiles := map[uintptr]bool{}
+	origCloseFile := closeFile
+	defer func() { closeFile = origCloseFile }()
+	closeFile = func(f *os.File) error {
+		closeCallCount++
+		closedFiles[f.Fd()] = true
+		return f.Close()
+	}
+
 	closeTTY(ttyIn, ttyOut)
+
+	if closeCallCount != 2 {
+		t.Errorf("expected closeFile called twice for different TTY files, got %d calls", closeCallCount)
+	}
+	if len(closedFiles) != 2 {
+		t.Errorf("expected two distinct files closed, got %d", len(closedFiles))
+	}
 }
 
 func TestCloseTTYSameFileCloseError(t *testing.T) {
@@ -1124,9 +1162,17 @@ func TestRunClosureDirectly(t *testing.T) {
 
 	origRunProgramFn := runProgramFn
 	defer func() { runProgramFn = origRunProgramFn }()
-	runProgramFn = func(p *tea.Program) (tea.Model, error) { return nil, nil }
+	runProgramCalled := false
+	runProgramFn = func(p *tea.Program) (tea.Model, error) {
+		runProgramCalled = true
+		return nil, nil
+	}
 
 	rootCmd.Run(cmd, []string{})
+
+	if !runProgramCalled {
+		t.Error("expected runProgramFn to be called")
+	}
 }
 
 func TestDefaultInjectables(t *testing.T) {
