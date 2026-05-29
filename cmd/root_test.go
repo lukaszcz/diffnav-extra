@@ -1139,21 +1139,33 @@ func TestDefaultInjectables(t *testing.T) {
 	if err != nil {
 		t.Logf("stdin stat: %v", err)
 	}
-	_ = info
+	_ = info // may be nil in test environment
 
 	// stdinReader default: call the original function.
+	// In a test environment with no real stdin pipe, this returns a reader
+	// wrapping os.Stdin, which is valid.
 	r := stdinReader()
-	_ = r
+	if r == nil {
+		t.Error("expected non-nil stdinReader result")
+	}
 
 	// closeFile default: call the original function.
 	f, _, _ := os.Pipe()
-	_ = closeFile(f)
+	if err := closeFile(f); err != nil {
+		t.Errorf("unexpected closeFile error: %v", err)
+	}
 
 	// writeRune default: call the original function.
 	var sb strings.Builder
 	n, werr := writeRune(&sb, 'x')
-	if werr != nil || n != 1 || sb.String() != "x" {
-		t.Errorf("unexpected writeRune result: n=%d err=%v str=%q", n, werr, sb.String())
+	if werr != nil {
+		t.Errorf("unexpected writeRune error: %v", werr)
+	}
+	if n != 1 {
+		t.Errorf("expected writeRune to write 1 byte, got %d", n)
+	}
+	if sb.String() != "x" {
+		t.Errorf("expected writeRune to write 'x', got %q", sb.String())
 	}
 
 	// getwd default: call the original function.
@@ -1166,13 +1178,20 @@ func TestDefaultInjectables(t *testing.T) {
 	}
 
 	// newProgram default: call the original function.
+	// newProgram with nil model returns a program object but Run() would fail.
 	p := newProgram(nil)
-	_ = p
+	if p == nil {
+		t.Error("expected non-nil program from newProgram")
+	}
 
 	// openTTY default: call the original function.
 	// tea.OpenTTY() needs a real terminal. In test mode it will fail.
 	_, _, ttyErr := openTTY()
-	_ = ttyErr
+	if ttyErr == nil {
+		t.Log("openTTY succeeded (running in real terminal)")
+	} else {
+		t.Logf("openTTY failed as expected in test: %v", ttyErr)
+	}
 
 	// runProgramFn default: the function body `return p.Run()` is at line 121.
 	// We call it with a real tea.Program (created with no options) that
@@ -1181,8 +1200,12 @@ func TestDefaultInjectables(t *testing.T) {
 	origExit := exitFunc
 	defer func() { exitFunc = origExit }()
 	exitFunc = func(int) {}
-	// prog.Run() without input/output should fail, but we catch it.
-	defer func() { recover() }()
+	// prog.Run() without input/output should fail; we catch any panic explicitly.
+	defer func() {
+		if r := recover(); r != nil {
+			t.Logf("runProgramFn panicked as expected in test: %v", r)
+		}
+	}()
 	_, _ = runProgramFn(prog)
 }
 

@@ -5034,6 +5034,7 @@ func TestHandleScrollInFileTreeZone(t *testing.T) {
 	}
 
 	// Scroll down in the file tree zone
+	before := m.fileTree.ViewportYOffset()
 	updated, _ := m.handleScroll(tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 2,
 		Y:      z.StartY + 5,
@@ -5043,7 +5044,11 @@ func TestHandleScrollInFileTreeZone(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	_ = result
+	// Scrolling down should increase or keep the same viewport Y offset
+	after := result.fileTree.ViewportYOffset()
+	if after < before {
+		t.Fatalf("expected viewport Y offset to increase or stay same after scroll down, before=%d after=%d", before, after)
+	}
 }
 
 func TestHandleScrollUpInFileTreeZone(t *testing.T) {
@@ -5070,9 +5075,10 @@ func TestHandleScrollUpInFileTreeZone(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	// FileTree should have scrolled
-	_ = result
-	_ = before
+	after := result.fileTree.ViewportYOffset()
+	if after > before {
+		t.Fatalf("expected viewport Y offset to decrease or stay same after scroll up, before=%d after=%d", before, after)
+	}
 }
 
 func TestHandleScrollInSearchResultsZone(t *testing.T) {
@@ -5141,12 +5147,17 @@ func TestHandleScrollInDiffViewerZoneUp(t *testing.T) {
 	m := newTestMainModel(t)
 	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 40})
 
+	// Scroll down first so we can scroll up
+	m.diffViewer.ScrollDown(10)
+
 	_ = m.View().Content
 
 	z := zone.Get(zoneDiffViewer)
 	if z.IsZero() {
 		t.Fatal("zoneDiffViewer not registered after View()")
 	}
+
+	before := m.diffViewer.YOffset()
 
 	// Scroll up in diff viewer zone
 	updated, _ := m.handleScroll(tea.MouseMotionMsg(tea.Mouse{
@@ -5158,7 +5169,10 @@ func TestHandleScrollInDiffViewerZoneUp(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	_ = result
+	after := result.diffViewer.YOffset()
+	if after > before {
+		t.Fatalf("expected YOffset to decrease or stay same after scroll up, before=%d after=%d", before, after)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -5188,6 +5202,7 @@ func TestHandleDiffSelectionMotionAboveViewport(t *testing.T) {
 
 	// Move cursor above the dir header area (paneY < 3)
 	// Use mouse Y position that puts paneY < DirHeaderHeight
+	before := m.diffViewer.YOffset()
 	updated, _ := m.handleDiffSelectionMotion(tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 5,
 		Y:      z.StartY, // paneY = 0, which is < DirHeaderHeight
@@ -5197,7 +5212,14 @@ func TestHandleDiffSelectionMotionAboveViewport(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	_ = result
+	// Cursor above viewport should trigger ScrollUp(1)
+	if after := result.diffViewer.YOffset(); after > before {
+		t.Fatalf("expected YOffset to decrease or stay same when dragging above viewport, before=%d after=%d", before, after)
+	}
+	// Selection should still be active
+	if !result.diffViewer.IsSelecting() {
+		t.Fatal("expected selection to remain active after above-viewport motion")
+	}
 }
 
 func TestHandleDiffSelectionMotionBelowViewport(t *testing.T) {
@@ -5222,6 +5244,7 @@ func TestHandleDiffSelectionMotionBelowViewport(t *testing.T) {
 	vpHeight := m.diffViewer.Height()
 	belowY := z.StartY + diffviewer.DirHeaderHeight + vpHeight + 5
 
+	before := m.diffViewer.YOffset()
 	updated, _ := m.handleDiffSelectionMotion(tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 5,
 		Y:      belowY,
@@ -5231,7 +5254,13 @@ func TestHandleDiffSelectionMotionBelowViewport(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	_ = result
+	// Cursor below viewport should trigger ScrollDown(1)
+	if result.diffViewer.YOffset() <= before {
+		t.Fatalf("expected YOffset to increase when dragging below viewport, before=%d after=%d", before, result.diffViewer.YOffset())
+	}
+	if !result.diffViewer.IsSelecting() {
+		t.Fatal("expected selection to remain active after below-viewport motion")
+	}
 }
 
 func TestHandleDiffSelectionMotionInViewport(t *testing.T) {
@@ -5263,7 +5292,9 @@ func TestHandleDiffSelectionMotionInViewport(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	_ = result
+	if !result.diffViewer.IsSelecting() {
+		t.Fatal("expected selection to remain active after in-viewport motion")
+	}
 }
 
 func TestHandleDiffSelectionMotionOutsideDiffPaneHorizontally(t *testing.T) {
@@ -5287,7 +5318,10 @@ func TestHandleDiffSelectionMotionOutsideDiffPaneHorizontally(t *testing.T) {
 		t.Fatalf("unexpected model type %T", updated)
 	}
 	// Should be a no-op when cursor is outside the diff pane horizontally
-	_ = result
+	// Selection should remain unchanged
+	if !result.diffViewer.IsSelecting() {
+		t.Fatal("expected selection to remain active after horizontal out-of-bounds motion")
+	}
 }
 
 func TestHandleDiffSelectionMotionNotSelecting(t *testing.T) {
@@ -5304,7 +5338,10 @@ func TestHandleDiffSelectionMotionNotSelecting(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	_ = result
+	// Model should be unchanged when not selecting
+	if result.diffViewer.IsSelecting() {
+		t.Fatal("expected no selection to be active when not previously selecting")
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -5395,8 +5432,10 @@ func TestHandleMouseReleaseWithSelectionEndsAndCopies(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	// The diff viewer should no longer be selecting
-	_ = result
+	// The diff viewer should no longer be selecting after release
+	if result.diffViewer.IsSelecting() {
+		t.Fatal("expected selection to end after mouse release")
+	}
 	_ = cmd // cmd may be a clipboard cmd or nil
 }
 
@@ -5436,7 +5475,9 @@ func TestHandleMouseMotionStartsSidebarDrag(t *testing.T) {
 		t.Fatalf("unexpected model type %T", updated2)
 	}
 	// Sidebar width should have changed
-	_ = result2
+	if result2.sidebarWidth() == sidebarWidth {
+		t.Fatal("expected sidebar width to change after dragging")
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -5470,11 +5511,10 @@ func TestHandleMouseMotionWithDiffSelection(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	_ = result
+	if !result.diffViewer.IsSelecting() {
+		t.Fatal("expected selection to remain active during drag motion")
+	}
 }
-
-// ---------------------------------------------------------------------------
-// handleMouse: click starting diff selection (lines 1289-1291)
 // ---------------------------------------------------------------------------
 
 func TestHandleMouseClickStartsDiffSelection(t *testing.T) {
@@ -5522,6 +5562,8 @@ func TestHandleMouseWheelRoutedToHandleScroll(t *testing.T) {
 	}
 
 	// Mouse wheel events should be routed to handleScroll
+	m.diffViewer.ScrollDown(5) // ensure we have some scroll offset
+	before := m.diffViewer.YOffset()
 	updated, _ := m.handleMouse(tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 5,
 		Y:      z.StartY + 5,
@@ -5531,7 +5573,10 @@ func TestHandleMouseWheelRoutedToHandleScroll(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	_ = result
+	after := result.diffViewer.YOffset()
+	if after < before {
+		t.Fatalf("expected YOffset to increase or stay same after wheel down, before=%d after=%d", before, after)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -5734,7 +5779,10 @@ func TestHandleMouseFileTreeZoneClick(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	_ = result
+	// Clicking the file tree should activate the FileTreePanel
+	if result.activePanel != FileTreePanel {
+		t.Fatalf("expected FileTreePanel after clicking file tree, got %v", result.activePanel)
+	}
 }
 
 // ---------------------------------------------------------------------------
