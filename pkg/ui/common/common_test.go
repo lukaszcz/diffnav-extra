@@ -208,7 +208,7 @@ func TestRenderScrollbarNewlineCount(t *testing.T) {
 		t.Fatal("expected non-empty scrollbar")
 	}
 	// Should have viewHeight-1 newlines between the viewHeight visual lines
-	newlineCount := strings.Count(got, "│") + strings.Count(got, "┃") - 1
+	newlineCount := strings.Count(got, "\n")
 	if newlineCount != viewHeight-1 {
 		t.Errorf("expected %d newlines, got %d", viewHeight-1, newlineCount)
 	}

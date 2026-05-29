@@ -22,11 +22,9 @@ func TestDirNode_Fields(t *testing.T) {
 
 func TestDirNode_NilReceiver(t *testing.T) {
 	var d *DirNode
-	// String() dereferences the nil pointer, so calling it on a nil receiver panics.
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("expected panic when calling String() on nil *DirNode")
-		}
-	}()
-	_ = d.String()
+	// String() should safely return empty string on nil receiver.
+	got := d.String()
+	if got != "" {
+		t.Errorf("String() on nil *DirNode = %q, want empty string", got)
+	}
 }

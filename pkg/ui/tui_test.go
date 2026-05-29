@@ -1489,14 +1489,15 @@ func TestResolveBranchWithMultipleRefs(t *testing.T) {
 }
 
 func TestResolveBranchNoDecoration(t *testing.T) {
-	// Without decoration, resolveBranch will try `git branch --points-at`
-	// which may return empty or a real branch depending on the repo.
-	// Verify the result is either empty or a valid branch name (no panic, valid return).
+	// Without decoration, resolveBranch falls through to git CLI.
+	// Using a non-existent hash, git should return empty.
 	preamble := "commit abc123"
 	result := resolveBranch(preamble)
-	// Result must be a string (possibly empty if git CLI fails or finds nothing)
-	// but it should never panic or return garbage.
-	_ = result
+	// abc123 is not a valid full hash, so git CLI likely errors and returns "".
+	// If it does return something, it must be a valid branch name (no spaces or newlines).
+	if strings.Contains(result, " ") || strings.Contains(result, "\n") {
+		t.Fatalf("expected valid branch name or empty, got %q", result)
+	}
 }
 
 func TestResolveBranchEmptyPreamble(t *testing.T) {
@@ -1510,10 +1511,11 @@ func TestResolveBranchNoHeadArrow(t *testing.T) {
 	preamble := "commit abc123 (tag: v1.0, origin/main)"
 	// No "HEAD -> " prefix, so it falls through to git CLI
 	result := resolveBranch(preamble)
-	// When git CLI fails or finds nothing, result should be empty.
-	// When it succeeds, it should return a valid branch name (no panic).
-	// We at least verify it doesn't panic and returns a string.
-	_ = result
+	// abc123 is not a valid full hash, so git CLI likely errors and returns "".
+	// If it does return something, it must be a valid branch name.
+	if strings.Contains(result, " ") || strings.Contains(result, "\n") {
+		t.Fatalf("expected valid branch name or empty, got %q", result)
+	}
 }
 
 func TestResolveBranchCommitLineWithExtraContent(t *testing.T) {
@@ -3794,8 +3796,11 @@ func TestResolveBranchWithCommitLineAndRef(t *testing.T) {
 
 func TestResolveBranchOnlyTag(t *testing.T) {
 	preamble := "commit abc (tag: v1.0)"
-	// No HEAD -> prefix, falls through to git CLI
-	_ = resolveBranch(preamble)
+	// No HEAD -> prefix, falls through to git CLI with short hash "abc"
+	result := resolveBranch(preamble)
+	if strings.Contains(result, " ") || strings.Contains(result, "\n") {
+		t.Fatalf("expected valid branch name or empty, got %q", result)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -4273,13 +4278,7 @@ func TestSearchUpdateCtrlCQuits(t *testing.T) {
 		}
 	}
 	if !foundQuit {
-		// The cmd returned is tea.Quit, which is wrapped differently
-		// Check if any cmd produces a quit-like msg
-		for _, cmd := range cmds {
-			if cmd != nil {
-				_ = cmd()
-			}
-		}
+		t.Fatal("expected to find a tea.QuitMsg in returned commands")
 	}
 }
 
@@ -4499,20 +4498,13 @@ func TestViewDiffViewerPanelColor(t *testing.T) {
 func TestFetchFileTreeParseErrorReturnsErrMsg(t *testing.T) {
 	m := newTestMainModel(t)
 
-	// Create input that gitdiff.Parse cannot handle
-	// gitdiff.Parse expects unified diff format; binary/corrupt data may cause errors.
-	// We use malformed binary-like content.
-	m.input = "diff --git a/x b/x\nindex 0000000..1111111 1\nBinary files /dev/null and b/x differ"
+	// Use input with a bad hunk range that gitdiff.Parse deterministically rejects.
+	// Non-numeric range values like -a,b cause parse errors.
+	m.input = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -a,b +c,d @@\n+content"
 
 	msg := m.fetchFileTree()
-	// gitdiff.Parse may or may not error on this; either way should not panic
-	switch msg.(type) {
-	case fileTreeMsg:
-		// Parsed successfully (lenient parser)
-	case common.ErrMsg:
-		// Error path covered
-	default:
-		t.Fatalf("expected fileTreeMsg or ErrMsg, got %T", msg)
+	if _, ok := msg.(common.ErrMsg); !ok {
+		t.Fatalf("expected common.ErrMsg for invalid hunk range, got %T", msg)
 	}
 }
 
@@ -4522,21 +4514,23 @@ func TestFetchFileTreeParseErrorReturnsErrMsg(t *testing.T) {
 
 func TestResolveBranchCommitNoRefsWithGitCli(t *testing.T) {
 	// "commit abc" - no decoration, falls through to git CLI --points-at lookup.
-	// We need to be in a git repo for this to work. Since we're in diffnav's git repo,
-	// use a valid but non-existent hash to test the git error path.
+	// Use a all-zero hash that has no branch pointing at it.
 	result := resolveBranch("commit 0000000000000000000000000000000000000000")
-	// The hash likely has no branch pointing at it; returns ""
-	// Or returns a branch name if it happens to exist. Either way, no panic.
-	// Verify it's a valid return value (empty string or branch name).
-	_ = result
+	// The hash has no branch pointing at it; result should be empty.
+	// If non-empty, it must be a valid branch name (no spaces or newlines).
+	if strings.Contains(result, " ") || strings.Contains(result, "\n") {
+		t.Fatalf("expected valid branch name or empty, got %q", result)
+	}
 }
 
 func TestResolveBranchCommitWithRefsButNoHeadArrow(t *testing.T) {
 	// "commit abc (tag: v1.0, origin/main)" - no HEAD ->, falls through to git CLI
 	result := resolveBranch("commit abc123 (tag: v1.0, origin/main)")
 	// Falls through to --points-at with hash "abc123"
-	// May or may not find a branch. No panic either way.
-	_ = result
+	// May or may not find a branch. Must return a valid branch name or empty.
+	if strings.Contains(result, " ") || strings.Contains(result, "\n") {
+		t.Fatalf("expected valid branch name or empty, got %q", result)
+	}
 }
 
 func TestResolveBranchCommitHashTruncatedBySpace(t *testing.T) {
@@ -4908,7 +4902,7 @@ func TestHandleSearchResultClickIndexOutOfRange(t *testing.T) {
 
 	z := zone.Get(zoneSearchResults)
 	if z.IsZero() {
-		t.Skip("zoneSearchResults not registered")
+		t.Fatal("zoneSearchResults not registered after View()")
 	}
 
 	// Click at a Y offset far below the last result
@@ -4951,7 +4945,7 @@ func TestHandleFileTreeClickNilNode(t *testing.T) {
 
 	z := zone.Get(zoneFileTree)
 	if z.IsZero() {
-		t.Skip("zoneFileTree not registered")
+		t.Fatal("zoneFileTree not registered after View()")
 	}
 
 	// Click at a Y offset where no node exists (far below the tree)
@@ -4994,7 +4988,7 @@ func TestHandleFileTreeClickDirectoryIconHit(t *testing.T) {
 
 	z := zone.Get(zoneFileTree)
 	if z.IsZero() {
-		t.Skip("zoneFileTree not registered")
+		t.Fatal("zoneFileTree not registered after View()")
 	}
 
 	localY := node.YOffset() - m.fileTree.ViewportYOffset()
@@ -5036,7 +5030,7 @@ func TestHandleScrollInFileTreeZone(t *testing.T) {
 
 	z := zone.Get(zoneFileTree)
 	if z.IsZero() {
-		t.Skip("zoneFileTree not registered")
+		t.Fatal("zoneFileTree not registered after View()")
 	}
 
 	// Scroll down in the file tree zone
@@ -5063,7 +5057,7 @@ func TestHandleScrollUpInFileTreeZone(t *testing.T) {
 
 	z := zone.Get(zoneFileTree)
 	if z.IsZero() {
-		t.Skip("zoneFileTree not registered")
+		t.Fatal("zoneFileTree not registered after View()")
 	}
 
 	before := m.fileTree.ViewportYOffset()
@@ -5095,7 +5089,7 @@ func TestHandleScrollInSearchResultsZone(t *testing.T) {
 
 	z := zone.Get(zoneSearchResults)
 	if z.IsZero() {
-		t.Skip("zoneSearchResults not registered")
+		t.Fatal("zoneSearchResults not registered after View()")
 	}
 
 	// Scroll down in search results
@@ -5128,7 +5122,7 @@ func TestHandleScrollUpInSearchResultsZone(t *testing.T) {
 
 	z := zone.Get(zoneSearchResults)
 	if z.IsZero() {
-		t.Skip("zoneSearchResults not registered")
+		t.Fatal("zoneSearchResults not registered after View()")
 	}
 
 	updated, _ := m.handleScroll(tea.MouseMotionMsg(tea.Mouse{
@@ -5151,7 +5145,7 @@ func TestHandleScrollInDiffViewerZoneUp(t *testing.T) {
 
 	z := zone.Get(zoneDiffViewer)
 	if z.IsZero() {
-		t.Skip("zoneDiffViewer not registered")
+		t.Fatal("zoneDiffViewer not registered after View()")
 	}
 
 	// Scroll up in diff viewer zone
@@ -5189,7 +5183,7 @@ func TestHandleDiffSelectionMotionAboveViewport(t *testing.T) {
 
 	z := zone.Get(zoneDiffViewer)
 	if z.IsZero() {
-		t.Skip("zoneDiffViewer not registered")
+		t.Fatal("zoneDiffViewer not registered after View()")
 	}
 
 	// Move cursor above the dir header area (paneY < 3)
@@ -5220,7 +5214,7 @@ func TestHandleDiffSelectionMotionBelowViewport(t *testing.T) {
 
 	z := zone.Get(zoneDiffViewer)
 	if z.IsZero() {
-		t.Skip("zoneDiffViewer not registered")
+		t.Fatal("zoneDiffViewer not registered after View()")
 	}
 
 	// Move cursor below the viewport bottom
@@ -5254,7 +5248,7 @@ func TestHandleDiffSelectionMotionInViewport(t *testing.T) {
 
 	z := zone.Get(zoneDiffViewer)
 	if z.IsZero() {
-		t.Skip("zoneDiffViewer not registered")
+		t.Fatal("zoneDiffViewer not registered after View()")
 	}
 
 	// Move cursor within the viewport (paneY between DirHeaderHeight and DirHeaderHeight+vpHeight)
@@ -5457,7 +5451,7 @@ func TestHandleMouseMotionWithDiffSelection(t *testing.T) {
 
 	z := zone.Get(zoneDiffViewer)
 	if z.IsZero() {
-		t.Skip("zoneDiffViewer not registered")
+		t.Fatal("zoneDiffViewer not registered after View()")
 	}
 
 	// Start a selection in the diff pane
@@ -5491,7 +5485,7 @@ func TestHandleMouseClickStartsDiffSelection(t *testing.T) {
 
 	z := zone.Get(zoneDiffViewer)
 	if z.IsZero() {
-		t.Skip("zoneDiffViewer not registered")
+		t.Fatal("zoneDiffViewer not registered after View()")
 	}
 
 	// Click in the content area of the diff pane
@@ -5524,7 +5518,7 @@ func TestHandleMouseWheelRoutedToHandleScroll(t *testing.T) {
 
 	z := zone.Get(zoneDiffViewer)
 	if z.IsZero() {
-		t.Skip("zoneDiffViewer not registered")
+		t.Fatal("zoneDiffViewer not registered after View()")
 	}
 
 	// Mouse wheel events should be routed to handleScroll
@@ -5553,7 +5547,7 @@ func TestHandleMouseHeaderZoneClickWithoutPreamble(t *testing.T) {
 
 	z := zone.Get(zoneHeader)
 	if z.IsZero() {
-		t.Skip("zoneHeader not registered")
+		t.Fatal("zoneHeader not registered after View()")
 	}
 
 	updated, _ := m.handleMouse(tea.MouseClickMsg(tea.Mouse{
@@ -5583,7 +5577,7 @@ func TestHandleMouseSearchBoxZoneClickWhenAlreadySearching(t *testing.T) {
 
 	z := zone.Get(zoneSearchBox)
 	if z.IsZero() {
-		t.Skip("zoneSearchBox not registered")
+		t.Fatal("zoneSearchBox not registered after View()")
 	}
 
 	// Click on the search box while already searching - should be no-op per handleSearchBoxClick
@@ -5613,7 +5607,7 @@ func TestHandleMouseHelpZoneClickTogglesHelp(t *testing.T) {
 
 	z := zone.Get(zoneHelp)
 	if z.IsZero() {
-		t.Skip("zoneHelp not registered")
+		t.Fatal("zoneHelp not registered after View()")
 	}
 
 	// Click help zone to open help
@@ -5658,7 +5652,7 @@ func TestHandleMouseHeaderZoneClickWithPreambleOpensMessage(t *testing.T) {
 
 	z := zone.Get(zoneHeader)
 	if z.IsZero() {
-		t.Skip("zoneHeader not registered")
+		t.Fatal("zoneHeader not registered after View()")
 	}
 
 	updated, _ := m.handleMouse(tea.MouseClickMsg(tea.Mouse{
@@ -5693,7 +5687,7 @@ func TestHandleMouseSearchResultsZoneClick(t *testing.T) {
 
 	z := zone.Get(zoneSearchResults)
 	if z.IsZero() {
-		t.Skip("zoneSearchResults not registered")
+		t.Fatal("zoneSearchResults not registered after View()")
 	}
 
 	if len(m.filtered) == 0 {
@@ -5727,7 +5721,7 @@ func TestHandleMouseFileTreeZoneClick(t *testing.T) {
 
 	z := zone.Get(zoneFileTree)
 	if z.IsZero() {
-		t.Skip("zoneFileTree not registered")
+		t.Fatal("zoneFileTree not registered after View()")
 	}
 
 	// Click on the first visible node in the file tree
@@ -6058,7 +6052,7 @@ func TestHandleSearchResultClickIndexExceedsFiltered(t *testing.T) {
 
 	z := zone.Get(zoneSearchResults)
 	if z.IsZero() {
-		t.Skip("zoneSearchResults not registered")
+		t.Fatal("zoneSearchResults not registered after View()")
 	}
 
 	// Scroll the results viewport so that viewport YOffset > 0
@@ -6138,7 +6132,7 @@ func TestHandleDiffSelectionMotionClampX(t *testing.T) {
 
 	z := zone.Get(zoneDiffViewer)
 	if z.IsZero() {
-		t.Skip("zoneDiffViewer not registered")
+		t.Fatal("zoneDiffViewer not registered after View()")
 	}
 
 	// Move cursor within the viewport to test the clamping paths
@@ -6172,7 +6166,7 @@ func TestHandleDiffSelectionMotionDiffPanePointFails(t *testing.T) {
 
 	z := zone.Get(zoneDiffViewer)
 	if z.IsZero() {
-		t.Skip("zoneDiffViewer not registered")
+		t.Fatal("zoneDiffViewer not registered after View()")
 	}
 
 	// Move cursor to the dir-header area where diffPanePoint returns ok=false
@@ -6201,7 +6195,7 @@ func TestHandleMouseSearchBoxZoneClickWhenNotSearching(t *testing.T) {
 
 	z := zone.Get(zoneSearchBox)
 	if z.IsZero() {
-		t.Skip("zoneSearchBox not registered")
+		t.Fatal("zoneSearchBox not registered after View()")
 	}
 
 	updated, _ := m.handleMouse(tea.MouseClickMsg(tea.Mouse{
@@ -6269,20 +6263,13 @@ func TestUpdateBackgroundDetectionAddsDiffViewerCmd(t *testing.T) {
 func TestFetchFileTreeParseError(t *testing.T) {
 	m := newTestMainModel(t)
 
-	// gitdiff.Parse is lenient, but truly invalid content that looks like
-	// a diff header without proper hunk headers might produce an error.
-	// Use binary-like data with NUL characters that will cause an error.
-	// Actually, let's try with malformed diff that gitdiff.Parse genuinely rejects.
-	m.input = "diff --binary --git a/test b/test\nBinary files differ"
+	// Use an incomplete hunk header that gitdiff.Parse deterministically rejects.
+	// Missing the closing " @@" causes an "invalid fragment header" error.
+	m.input = "diff --git a/test b/test\n--- a/test\n+++ b/test\n@@ -0,0 +1 @"
 
 	msg := m.fetchFileTree()
-	switch msg := msg.(type) {
-	case common.ErrMsg:
-		// Error path covered
-		_ = msg
-	case fileTreeMsg:
-		// Parser was lenient
-		_ = msg
+	if _, ok := msg.(common.ErrMsg); !ok {
+		t.Fatalf("expected common.ErrMsg for incomplete hunk header, got %T", msg)
 	}
 }
 
@@ -6341,7 +6328,7 @@ func TestHandleSearchResultClickIndexOutOfRangeCoverage(t *testing.T) {
 
 	z := zone.Get(zoneSearchResults)
 	if z.IsZero() {
-		t.Skip("zoneSearchResults not registered")
+		t.Fatal("zoneSearchResults not registered after View()")
 	}
 
 	if len(m.filtered) == 0 {
@@ -6425,7 +6412,7 @@ func TestHandleDiffSelectionMotionClampedXEdgeCases(t *testing.T) {
 
 	z := zone.Get(zoneDiffViewer)
 	if z.IsZero() {
-		t.Skip("zoneDiffViewer not registered")
+		t.Fatal("zoneDiffViewer not registered after View()")
 	}
 
 	// Move cursor within the viewport area
@@ -6458,7 +6445,7 @@ func TestHandleDiffSelectionMotionDiffPanePointFailsCoverage(t *testing.T) {
 
 	z := zone.Get(zoneDiffViewer)
 	if z.IsZero() {
-		t.Skip("zoneDiffViewer not registered")
+		t.Fatal("zoneDiffViewer not registered after View()")
 	}
 
 	// Move cursor within the zone X bounds but in the dir-header area
@@ -6486,16 +6473,11 @@ func TestHandleDiffSelectionMotionDiffPanePointFailsCoverage(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestFetchFileTreeGenuinelyBadInput(t *testing.T) {
-	// Try various inputs that are more likely to cause gitdiff.Parse to error.
-	// gitdiff.Parse returns an error when it encounters a malformed hunk header.
+	// Inputs where gitdiff.Parse deterministically returns an error.
 	tests := []struct {
-		name  string
-		input string
+		name   string
+		input  string
 	}{
-		{
-			name:  "malformed_new_file",
-			input: "diff --git a/test b/test\nnew file mode 100644\n--- /dev/null\n+++ b/test\n@@@ -0,0 +1 @@@\n+hello",
-		},
 		{
 			name:  "bad_hunk_range",
 			input: "diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -a,b +c,d @@\n+content",
@@ -6503,6 +6485,10 @@ func TestFetchFileTreeGenuinelyBadInput(t *testing.T) {
 		{
 			name:  "incomplete_hunk",
 			input: "diff --git a/f b/f\n--- a/f\n+++ b/f\n@@ -0,0 +1 @",
+		},
+		{
+			name:  "new_file_with_old_content",
+			input: "diff --git a/test b/test\nnew file mode 100644\n--- /dev/null\n+++ b/test\n@@ -1 +1 @@\n+hello",
 		},
 	}
 
@@ -6512,11 +6498,8 @@ func TestFetchFileTreeGenuinelyBadInput(t *testing.T) {
 			cfg := config.DefaultConfig()
 			m := New(tc.input, cfg)
 			msg := m.fetchFileTree()
-			switch msg := msg.(type) {
-			case common.ErrMsg:
-				t.Logf("Got expected error: %v", msg.Err)
-			case fileTreeMsg:
-				t.Logf("Parser was lenient, got %d files", len(msg.files))
+			if _, ok := msg.(common.ErrMsg); !ok {
+				t.Fatalf("expected common.ErrMsg for %s, got %T", tc.name, msg)
 			}
 		})
 	}
@@ -6558,7 +6541,7 @@ func TestHandleSearchResultClickScrolledPastResults(t *testing.T) {
 
 	z := zone.Get(zoneSearchResults)
 	if z.IsZero() {
-		t.Skip("zoneSearchResults not registered")
+		t.Fatal("zoneSearchResults not registered after View()")
 	}
 
 	// Scroll to the bottom of the results
@@ -6727,7 +6710,7 @@ func TestHandleDiffSelectionMotionOutOfBoundsHorizontal(t *testing.T) {
 	// Get the diffViewer zone and construct a mouse event outside it horizontally.
 	z := zone.Get(zoneDiffViewer)
 	if z.IsZero() {
-		t.Skip("diffViewer zone not registered")
+		t.Fatal("diffViewer zone not registered after View()")
 	}
 
 	// Mouse to the left of the zone.
@@ -6745,7 +6728,7 @@ func TestHandleDiffSelectionMotionAbovePane(t *testing.T) {
 
 	z := zone.Get(zoneDiffViewer)
 	if z.IsZero() {
-		t.Skip("diffViewer zone not registered")
+		t.Fatal("diffViewer zone not registered after View()")
 	}
 
 	// Mouse above the dir header.
@@ -6763,7 +6746,7 @@ func TestHandleDiffSelectionMotionBelowPane(t *testing.T) {
 
 	z := zone.Get(zoneDiffViewer)
 	if z.IsZero() {
-		t.Skip("diffViewer zone not registered")
+		t.Fatal("diffViewer zone not registered after View()")
 	}
 
 	// Mouse below the viewport (past the pane).
@@ -6784,7 +6767,7 @@ func TestHandleDiffSelectionMotionClampedX(t *testing.T) {
 
 	z := zone.Get(zoneDiffViewer)
 	if z.IsZero() {
-		t.Skip("diffViewer zone not registered")
+		t.Fatal("diffViewer zone not registered after View()")
 	}
 
 	vpWidth := m.diffViewer.Width()

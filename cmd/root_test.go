@@ -282,8 +282,8 @@ func TestSetupLoggingDebugFileError(t *testing.T) {
 	t.Setenv("DEBUG", "true")
 
 	origExit := exitFunc
-	exitCalled := false
-	exitFunc = func(int) { exitCalled = true }
+	exitCode := -1
+	exitFunc = func(code int) { exitCode = code }
 	defer func() { exitFunc = origExit }()
 
 	// Make debug.log creation impossible by setting the working dir to a
@@ -303,8 +303,11 @@ func TestSetupLoggingDebugFileError(t *testing.T) {
 	cleanup := setupLogging()
 	cleanup()
 
-	if !exitCalled {
+	if exitCode == -1 {
 		t.Error("expected exitFunc to be called when debug.log cannot be opened")
+	}
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 for debug file error, got %d", exitCode)
 	}
 }
 
@@ -340,7 +343,7 @@ func TestReadInputStdinMode(t *testing.T) {
 	defer func() { exitFunc = origExit }()
 
 	// Provide a pipe input with a unified diff.
-	diffContent := "diff --git a/foo b/foo/n--- a/foo/n+++ b/foo/n@@ -1 +1 @@/n-old/n+new/n"
+	diffContent := "diff --git a/foo b/foo\n--- a/foo\n+++ b/foo\n@@ -1 +1 @@\n-old\n+new\n"
 	stdinStat = func() (os.FileInfo, error) {
 		return mockFileInfo{mode: os.ModeNamedPipe, size: int64(len(diffContent))}, nil
 	}
@@ -435,13 +438,16 @@ func TestReadStdinInputEmptyPipe(t *testing.T) {
 		return mockFileInfo{mode: 0, size: 0}, nil
 	}
 
-	exitCalled := false
-	exitFunc = func(code int) { exitCalled = true }
+	exitCode := -1
+	exitFunc = func(code int) { exitCode = code }
 
 	readStdinInput(false)
 
-	if !exitCalled {
+	if exitCode == -1 {
 		t.Error("expected exit to be called for empty stdin")
+	}
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0 for empty stdin, got %d", exitCode)
 	}
 }
 
@@ -458,17 +464,17 @@ func TestReadStdinInputHelpFlag(t *testing.T) {
 	}
 
 	// With help=true, the "no pipe exit" should be skipped.
-	diffContent := "diff --git a/foo b/foo/n--- a/foo/n+++ b/foo/n@@ -1 +1 @@/n-old/n+new/n"
+	diffContent := "diff --git a/foo b/foo\n--- a/foo\n+++ b/foo\n@@ -1 +1 @@\n-old\n+new\n"
 	stdinReader = func() *bufio.Reader {
 		return bufio.NewReader(strings.NewReader(diffContent))
 	}
 
-	exitCalled := false
-	exitFunc = func(int) { exitCalled = true }
+	exitCode := -1
+	exitFunc = func(code int) { exitCode = code }
 
 	result := readStdinInput(true)
 
-	if exitCalled {
+	if exitCode != -1 {
 		t.Error("should not call exit when help is true")
 	}
 	if !strings.Contains(result, "diff --git") {
@@ -486,7 +492,7 @@ func TestReadStdinInputPipeWithDiff(t *testing.T) {
 		return mockFileInfo{mode: os.ModeNamedPipe, size: 100}, nil
 	}
 
-	diffContent := "diff --git a/foo b/foo/n--- a/foo/n+++ b/foo/n@@ -1 +1 @@/n-old/n+new/n"
+	diffContent := "diff --git a/foo b/foo\n--- a/foo\n+++ b/foo\n@@ -1 +1 @@\n-old\n+new\n"
 	stdinReader = func() *bufio.Reader {
 		return bufio.NewReader(strings.NewReader(diffContent))
 	}
@@ -512,13 +518,16 @@ func TestReadStdinInputEmptyDiff(t *testing.T) {
 		return bufio.NewReader(strings.NewReader("   \n"))
 	}
 
-	exitCalled := false
-	exitFunc = func(int) { exitCalled = true }
+	exitCode := -1
+	exitFunc = func(code int) { exitCode = code }
 
 	readStdinInput(false)
 
-	if !exitCalled {
+	if exitCode == -1 {
 		t.Error("expected exit for empty input")
+	}
+	if exitCode != 0 {
+		t.Errorf("expected exit code 0 for empty input, got %d", exitCode)
 	}
 }
 
@@ -534,7 +543,7 @@ func TestReadStdinInputNonUnifiedDiff(t *testing.T) {
 		return mockFileInfo{mode: os.ModeNamedPipe, size: 100}, nil
 	}
 	stdinReader = func() *bufio.Reader {
-		return bufio.NewReader(strings.NewReader("just some text/n"))
+		return bufio.NewReader(strings.NewReader("just some text\n"))
 	}
 
 	exitCode := -1
@@ -579,14 +588,17 @@ func TestRunProgramOpenTTYError(t *testing.T) {
 
 	// log.Fatal calls os.Exit by default. Override exitFunc to catch it.
 	origExit := exitFunc
-	exitCalled := false
-	exitFunc = func(int) { exitCalled = true }
+	exitCode := -1
+	exitFunc = func(code int) { exitCode = code }
 	defer func() { exitFunc = origExit }()
 
 	runProgram("input", config.DefaultConfig())
 
-	if !exitCalled {
+	if exitCode == -1 {
 		t.Error("expected exit when OpenTTY fails")
+	}
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 for OpenTTY failure, got %d", exitCode)
 	}
 }
 
@@ -763,8 +775,8 @@ func TestRunClosureCallsExtractedFunctions(t *testing.T) {
 	stdinReader = func() *bufio.Reader {
 		return bufio.NewReader(strings.NewReader(diffContent))
 	}
-	exitCalled := false
-	exitFunc = func(code int) { exitCalled = true }
+	exitCode := -1
+	exitFunc = func(code int) { exitCode = code }
 	ttyIn, _, _ := os.Pipe()
 	_, ttyOut, _ := os.Pipe()
 	openTTY = func() (*os.File, *os.File, error) {
@@ -789,8 +801,8 @@ func TestRunClosureCallsExtractedFunctions(t *testing.T) {
 
 	rootCmd.Run(cmd, []string{})
 
-	if exitCalled {
-		t.Error("expected exitCalled to remain false on successful Run closure")
+	if exitCode != -1 {
+		t.Errorf("expected no exit on successful Run closure, got exit code %d", exitCode)
 	}
 }
 
@@ -834,8 +846,8 @@ func TestSetupLoggingGetwdError(t *testing.T) {
 	t.Setenv("DEBUG", "true")
 
 	origExit := exitFunc
-	exitCalled := false
-	exitFunc = func(int) { exitCalled = true }
+	exitCode := -1
+	exitFunc = func(code int) { exitCode = code }
 	defer func() { exitFunc = origExit }()
 
 	// Replace getwd with a failing version.
@@ -846,8 +858,11 @@ func TestSetupLoggingGetwdError(t *testing.T) {
 	cleanup := setupLogging()
 	cleanup()
 
-	if !exitCalled {
+	if exitCode == -1 {
 		t.Error("expected exitFunc to be called when getwd fails")
+	}
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 for getwd failure, got %d", exitCode)
 	}
 }
 
@@ -897,13 +912,16 @@ func TestReadStdinInputWriteRuneError(t *testing.T) {
 		return bufio.NewReader(strings.NewReader("some text\n"))
 	}
 
-	exitCalled := false
-	exitFunc = func(code int) { exitCalled = true }
+	exitCode := -1
+	exitFunc = func(code int) { exitCode = code }
 
 	readStdinInput(false)
 
-	if !exitCalled {
+	if exitCode == -1 {
 		t.Error("expected exitFunc to be called on WriteRune error")
+	}
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 for WriteRune error, got %d", exitCode)
 	}
 }
 
@@ -970,13 +988,16 @@ func TestRunProgramProgramRunError(t *testing.T) {
 		return nil, fmt.Errorf("program error")
 	}
 
-	exitCalled := false
-	exitFunc = func(code int) { exitCalled = true }
+	exitCode := -1
+	exitFunc = func(code int) { exitCode = code }
 
 	runProgram("diff", config.DefaultConfig())
 
-	if !exitCalled {
+	if exitCode == -1 {
 		t.Error("expected exit on program error")
+	}
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 for program error, got %d", exitCode)
 	}
 }
 
@@ -1004,13 +1025,13 @@ func TestRunProgramProgramRunSuccess(t *testing.T) {
 		return nil, nil // success
 	}
 
-	exitCalled := false
-	exitFunc = func(code int) { exitCalled = true }
+	exitCode := -1
+	exitFunc = func(code int) { exitCode = code }
 
 	runProgram("diff", config.DefaultConfig())
 
-	if exitCalled {
-		t.Error("should not exit on program success")
+	if exitCode != -1 {
+		t.Errorf("should not exit on program success, got exit code %d", exitCode)
 	}
 }
 

@@ -7,5 +7,8 @@ type DirNode struct {
 
 // DirNode implements fmt.Stringer which charm.land/bubbles uses to render it in the tree bubble.
 func (d *DirNode) String() string {
+	if d == nil {
+		return ""
+	}
 	return d.Name
 }
