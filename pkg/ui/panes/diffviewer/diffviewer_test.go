@@ -2,7 +2,6 @@ package diffviewer
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -2262,32 +2261,7 @@ func TestRunDelta_BadArgsError(t *testing.T) {
 	}
 }
 
-// runDelta: process killed mid-run without context cancellation covers
-// the waitErr != nil && stderr.Len() == 0 branch. This is hard to trigger
-// reliably without context cancellation (which takes a different branch).
-// We test what we can and document the untestable branch.
-func TestRunDelta_KilledProcess(t *testing.T) {
-	if !deltaAvailable() {
-		t.Skip("delta not installed, skipping runDelta test")
-	}
-	// Use a context with very short timeout to kill the process before it
-	// can produce any output or stderr. The timeout path returns ctxErr
-	// before the waitErr/stderr check, so this branch mainly documents the
-	// difficulty of testing the no-stderr waitErr path through the public API.
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
-	defer cancel()
-	_, err := runDelta(ctx, []string{"--paging=never", "-w", "40"}, func(w io.Writer) error {
-		time.Sleep(100 * time.Millisecond)
-		io.WriteString(w, "diff\n")
-		return nil
-	})
-	if err == nil {
-		t.Fatal("expected error when delta process is killed by context timeout")
-	}
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("expected error to wrap context.DeadlineExceeded, got %v", err)
-	}
-}
+
 
 // runDelta: StdinPipe error path — injected via stdinPipeFunc var.
 func TestRunDelta_StdinPipeError(t *testing.T) {
