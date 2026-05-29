@@ -6452,14 +6452,24 @@ func TestOpenInEditorClosureBody(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHandleSearchResultClickIndexOutOfRangeCoverage(t *testing.T) {
+	// Use a minimal model with a very small viewport to guarantee that
+	// scrolling past the end produces clickedIndex >= len(filtered).
+	const numFiles = 5
+	files := make([]*gitdiff.File, numFiles)
+	for i := range files {
+		files[i] = &gitdiff.File{NewName: fmt.Sprintf("file%03d.txt", i)}
+	}
+
 	m := newTestMainModel(t)
 	m.width = 100
 	m.height = 40
 	m.searching = true
 	m.search.SetValue("") // match all
+	m.files = files
+	m.fileTree = m.fileTree.SetFiles(files)
 	m.setSearchResults()
 	m.resultsVp.SetWidth(m.config.UI.SearchTreeWidth)
-	m.resultsVp.SetHeight(m.mainContentHeight() - searchHeight)
+	m.resultsVp.SetHeight(2) // very small viewport to force scrolling
 	m.resultsVp.SetContent(m.resultsView())
 
 	// Must call View() to register zones
@@ -6471,37 +6481,33 @@ func TestHandleSearchResultClickIndexOutOfRangeCoverage(t *testing.T) {
 		t.Fatal("expected at least one search result")
 	}
 
-	// Scroll the results viewport so YOffset causes clickedIndex >= len(filtered)
-	// Set scroll position past the end
-	for m.resultsVp.YOffset() < len(m.filtered)+100 {
-		if m.resultsVp.AtBottom() {
-			break
-		}
-		m.resultsVp.ScrollDown(1)
-	}
+	// Scroll to the very bottom so YOffset is maximized.
+	m.resultsVp.GotoBottom()
 
-	// Click at y=0 in zone-relative coordinates
-	// clickedIndex = 0 + YOffset, which should be >= len(filtered)
-	clickedIndex := 0 + m.resultsVp.YOffset()
+	// Click at the last visible line in the zone to maximize clickedIndex.
+	// clickedIndex = y + YOffset. With Height=2, max y = 1.
+	clickY := m.resultsVp.Height() - 1 // last visible line
+	clickedIndex := clickY + m.resultsVp.YOffset()
+
+	// If even the maximum clickedIndex is within range, we can't test the
+	// out-of-range branch from this viewport configuration. Force the
+	// condition by temporarily reducing the filtered list.
 	if clickedIndex < len(m.filtered) {
-		t.Skipf(
-			"couldn't get YOffset past filtered list; YOffset=%d, len=%d",
-			m.resultsVp.YOffset(),
-			len(m.filtered),
-		)
+		// Trim filtered so that clickedIndex exceeds it.
+		m.filtered = m.filtered[:clickedIndex]
 	}
 
 	updated, _ := m.handleSearchResultClick(tea.MouseClickMsg(tea.Mouse{
 		X:      z.StartX + 5,
-		Y:      z.StartY, // y=0 in zone relative
+		Y:      z.StartY + clickY,
 		Button: tea.MouseLeft,
 	}))
 	result, ok := updated.(mainModel)
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	// Should return early without selecting any file
-	// The resultsCursor should remain unchanged.
+	// When clickedIndex >= len(filtered), the handler returns early and
+	// the cursor remains unchanged.
 	if result.resultsCursor != m.resultsCursor {
 		t.Errorf(
 			"expected resultsCursor unchanged (%d), got %d",
@@ -6727,9 +6733,9 @@ func TestClampToViewportWidth(t *testing.T) {
 	cases := []struct {
 		x, vpWidth, want int
 	}{
-		{x: 5, vpWidth: 10, want: 5},  // within bounds
-		{x: 15, vpWidth: 10, want: 9}, // past right edge
-		{x: 5, vpWidth: 0, want: 5},   // zero vpWidth (no clamping)
+		{x: 5, vpWidth: 10, want: 5},   // within bounds
+		{x: 15, vpWidth: 10, want: 9},  // past right edge
+		{x: 5, vpWidth: 0, want: 5},    // zero vpWidth (no clamping)
 		{x: 0, vpWidth: 10, want: 0},   // left edge
 		{x: 9, vpWidth: 10, want: 9},   // right edge (vpWidth-1)
 		{x: -33, vpWidth: 10, want: 0}, // negative x clamped to 0
