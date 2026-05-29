@@ -819,9 +819,22 @@ func TestSetCursorNoScrollEmptyFiles(t *testing.T) {
 
 func TestSetCursorNoScrollPreservesViewport(t *testing.T) {
 	m := newTestTreeModel([]string{"a.txt", "b.txt", "c.txt"})
+	m.SetSize(30, 2) // small viewport to force scrolling
 	m.GoToTop()
+
+	// Scroll down so the viewport has a non-zero offset.
+	m.ScrollDown(1)
+	VPBefore := m.ViewportYOffset()
+	if VPBefore == 0 {
+		t.Fatalf("precondition: expected viewport to be scrolled, got offset 0")
+	}
+
 	m.SetCursorNoScroll(2)
-	// Should not have scrolled the viewport
+
+	// The viewport offset must be exactly preserved.
+	if got := m.ViewportYOffset(); got != VPBefore {
+		t.Fatalf("expected viewport offset to be preserved at %d, got %d", VPBefore, got)
+	}
 	node := m.GetCurrNode()
 	if node == nil {
 		t.Fatal("expected current node")

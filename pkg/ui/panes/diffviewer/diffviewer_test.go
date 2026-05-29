@@ -989,6 +989,12 @@ func TestSelectedText_WithFileContent(t *testing.T) {
 	if text == "" {
 		t.Fatalf("expected non-empty text from selectedText")
 	}
+	if !strings.Contains(text, "some") {
+		t.Errorf("expected selected text to contain 'some' from first line, got %q", text)
+	}
+	if !strings.Contains(text, "anot") {
+		t.Errorf("expected selected text to contain 'anot' from second line, got %q", text)
+	}
 }
 
 // selectedText() - with dir diff content.
@@ -1005,6 +1011,13 @@ func TestSelectedText_WithDirContent(t *testing.T) {
 	text := m.selectedText()
 	if text == "" {
 		t.Fatalf("expected non-empty text from dir selectedText")
+	}
+	// The selection starts at col 3 on line 0, so 'dir '\041is excluded.
+	if !strings.Contains(text, "line0") {
+		t.Errorf("expected selected text to contain 'line0', got %q", text)
+	}
+	if !strings.Contains(text, "dir line1") {
+		t.Errorf("expected selected text to contain full middle line, got %q", text)
 	}
 }
 
@@ -1406,8 +1419,15 @@ func TestHeaderView_Dir(t *testing.T) {
 	if header == "" {
 		t.Fatalf("expected non-empty header for dir")
 	}
-	if !strings.Contains(header, "src") {
-		t.Errorf("expected header to contain dir path %q, got %q", "src", header)
+	headerPlain := ansi.Strip(header)
+	if !strings.Contains(headerPlain, "src") {
+		t.Errorf("expected header to contain dir path %q, got %q", "src", headerPlain)
+	}
+	if !strings.Contains(headerPlain, "+10") {
+		t.Errorf("expected header to contain additions +10, got %q", headerPlain)
+	}
+	if !strings.Contains(headerPlain, "-3") {
+		t.Errorf("expected header to contain deletions -3, got %q", headerPlain)
 	}
 }
 
@@ -1424,8 +1444,9 @@ func TestHeaderView_File(t *testing.T) {
 	if header == "" {
 		t.Fatalf("expected non-empty header for file")
 	}
-	if !strings.Contains(header, "main.go") {
-		t.Errorf("expected header to contain file name %q", "main.go")
+	headerPlain := ansi.Strip(header)
+	if !strings.Contains(headerPlain, "main.go") {
+		t.Errorf("expected header to contain file name %q, got %q", "main.go", headerPlain)
 	}
 }
 
@@ -2411,8 +2432,8 @@ func TestApplyHighlight_ClampedToEmptyRange(t *testing.T) {
 	}
 }
 
-// selectedText: panic recovery returns empty string instead of crashing.
-func TestSelectedText_PanicSafetyNet(t *testing.T) {
+// selectedText: valid selection on a single line returns the expected text.
+func TestSelectedText_ValidSingleLineSelection(t *testing.T) {
 	m := New(false, "dark")
 	m.file = &cachedNode{path: "test", diff: "normal content"}
 	m.sel = selection{
@@ -2423,10 +2444,9 @@ func TestSelectedText_PanicSafetyNet(t *testing.T) {
 		has:     true,
 	}
 
-	// Call selectedText normally — it should succeed, not panic.
 	text := m.selectedText()
-	if text == "" {
-		t.Fatalf("expected non-empty text from valid selection")
+	if text != "norma" {
+		t.Fatalf("expected selected text %q, got %q", "norma", text)
 	}
 }
 

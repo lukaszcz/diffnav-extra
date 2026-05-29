@@ -4,12 +4,9 @@ import "testing"
 
 func TestGetIcon_KnownDirectory(t *testing.T) {
 	got := GetIcon(".git", true)
-	want, ok := Directories[".git"]
-	if !ok {
-		t.Fatalf("no icon registered for .git directory")
-	}
-	if got != want {
-		t.Errorf("GetIcon(%q, true) = %q, want %q", ".git", got, want)
+	// Independent expected value — not read from the Directories map.
+	if got != "\uf02a2" {
+		t.Errorf("GetIcon(%q, true) = %q, want %q", ".git", got, "\uf02a2")
 	}
 }
 
@@ -28,19 +25,16 @@ func TestGetIcon_UnknownDirectory(t *testing.T) {
 func TestGetIcon_KnownFilename(t *testing.T) {
 	tests := []struct {
 		filename string
+		want     string
 	}{
-		{"Dockerfile"},
-		{"go.mod"},
-		{"go.sum"},
+		{"Dockerfile", "\ue650"},
+		{"go.mod", "\ue65e"},
+		{"go.sum", "\ue65e"},
 	}
 	for _, tt := range tests {
-		want, ok := Filenames[tt.filename]
-		if !ok {
-			t.Fatalf("no icon registered for filename %q", tt.filename)
-		}
 		got := GetIcon(tt.filename, false)
-		if got != want {
-			t.Errorf("GetIcon(%q, false) = %q, want %q", tt.filename, got, want)
+		if got != tt.want {
+			t.Errorf("GetIcon(%q, false) = %q, want %q", tt.filename, got, tt.want)
 		}
 	}
 }
@@ -48,19 +42,15 @@ func TestGetIcon_KnownFilename(t *testing.T) {
 func TestGetIcon_KnownExtension(t *testing.T) {
 	tests := []struct {
 		filename string
-		ext      string
+		want     string
 	}{
-		{"main.go", "go"},
-		{"app.ts", "ts"},
+		{"main.go", "\ue65e"},
+		{"app.ts", "\ue628"},
 	}
 	for _, tt := range tests {
-		want, ok := Extensions[tt.ext]
-		if !ok {
-			t.Fatalf("no icon registered for extension %q", tt.ext)
-		}
 		got := GetIcon(tt.filename, false)
-		if got != want {
-			t.Errorf("GetIcon(%q, false) = %q, want %q", tt.filename, got, want)
+		if got != tt.want {
+			t.Errorf("GetIcon(%q, false) = %q, want %q", tt.filename, got, tt.want)
 		}
 	}
 }
@@ -74,6 +64,15 @@ func TestGetIcon_UnknownFilenameAndExtension(t *testing.T) {
 			got,
 			DefaultFileIcon,
 		)
+	}
+}
+
+func TestGetIcon_FilenameBeatsExtension(t *testing.T) {
+	// Dockerfile has an entry in the Filenames map; it should be returned
+	// even though it has no extension (no fallback to the Extensions map).
+	filenameResult := GetIcon("Dockerfile", false)
+	if filenameResult == "" || filenameResult == DefaultFileIcon {
+		t.Errorf("expected a specific icon for 'Dockerfile', not the default")
 	}
 }
 

@@ -2197,7 +2197,12 @@ func TestMessageViewContentWithScrollbarWhenScrollable(t *testing.T) {
 	if content == "" {
 		t.Fatal("expected non-empty messageViewContent")
 	}
-	// When scrollable, content includes scrollbar track chars (│ or ┃)
+	// When scrollable, content must include scrollbar track (│) or thumb (┃) chars.
+	if !strings.Contains(content, "│") && !strings.Contains(content, "┃") {
+		t.Fatal(
+			"expected scrollbar track/thumb chars in messageViewContent when content is scrollable",
+		)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -2825,16 +2830,21 @@ func TestUpdateUpInDiffViewerPanel(t *testing.T) {
 	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 40})
 	m.activePanel = DiffViewerPanel
 
-	// Scroll down first so we have room to go up
-	m = updateMainModel(t, m, tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
-	m = updateMainModel(t, m, tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	// Inject scrollable content so the diff viewer can actually scroll.
+	m.diffViewer.SetContent(strings.Repeat("line\n", 500))
+
+	// Scroll down far so there is room to go up.
+	m.diffViewer.ScrollDown(30)
 	beforeY := m.diffViewer.YOffset()
+	if beforeY == 0 {
+		t.Fatalf("precondition: expected non-zero YOffset after ScrollDown")
+	}
 
 	m = updateMainModel(t, m, tea.KeyPressMsg(tea.Key{Code: tea.KeyUp}))
 	afterY := m.diffViewer.YOffset()
-	if afterY > beforeY {
+	if afterY >= beforeY {
 		t.Fatalf(
-			"expected YOffset to decrease or stay after Up, got before=%d after=%d",
+			"expected YOffset to decrease after Up on scrollable content, got before=%d after=%d",
 			beforeY,
 			afterY,
 		)
@@ -2846,12 +2856,15 @@ func TestUpdateDownInDiffViewerPanel(t *testing.T) {
 	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 40})
 	m.activePanel = DiffViewerPanel
 
+	// Inject scrollable content so the diff viewer can actually scroll.
+	m.diffViewer.SetContent(strings.Repeat("line\n", 500))
+
 	beforeY := m.diffViewer.YOffset()
 	m = updateMainModel(t, m, tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
 	afterY := m.diffViewer.YOffset()
-	if afterY < beforeY {
+	if afterY <= beforeY {
 		t.Fatalf(
-			"expected YOffset to increase or stay after Down, got before=%d after=%d",
+			"expected YOffset to increase after Down on scrollable content, got before=%d after=%d",
 			beforeY,
 			afterY,
 		)
@@ -3236,7 +3249,9 @@ func TestHandleScrollInDiffViewer(t *testing.T) {
 	m := newTestMainModel(t)
 	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 40})
 
-	// Need to call View() first to register zones
+	// Inject scrollable content so the viewport can actually move.
+	m.diffViewer.SetContent(strings.Repeat("line\n", 500))
+
 	_ = m.View().Content
 
 	z := waitForZone(t, zoneDiffViewer)
@@ -3248,18 +3263,14 @@ func TestHandleScrollInDiffViewer(t *testing.T) {
 		Button: tea.MouseWheelDown,
 	}))
 
-	// If the diffViewer has enough content to scroll, YOffset should increase.
-	// If content fits in the viewport, it stays at 0. Either way, the model
-	// must remain valid and the scroll was handled.
 	yOffsetAfter := m.diffViewer.YOffset()
-	if m.diffViewer.TotalLineCount() > 0 && yOffsetAfter < yOffsetBefore {
+	if yOffsetAfter <= yOffsetBefore {
 		t.Fatalf(
-			"expected YOffset to stay same or increase, got before=%d after=%d",
+			"expected YOffset to increase after wheel-down on scrollable content, before=%d after=%d",
 			yOffsetBefore,
 			yOffsetAfter,
 		)
 	}
-	_ = m.View().Content
 }
 
 func TestHandleScrollInFileTreeZoneLegacy(t *testing.T) {
@@ -3293,11 +3304,21 @@ func TestHandleScrollInSearchResults(t *testing.T) {
 	m := newTestMainModel(t)
 	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 40})
 	m.searching = true
-	m.search.SetValue("yarn")
+	m.search.SetValue("") // match all files to get many results
 	m.setSearchResults()
 	m.resultsVp.SetWidth(m.config.UI.SearchTreeWidth)
-	m.resultsVp.SetHeight(m.mainContentHeight() - searchHeight)
+	// Use a small results viewport so content definitely overflows.
+	m.resultsVp.SetHeight(2)
 	m.resultsVp.SetContent(m.resultsView())
+
+	// Verify precondition: there are more result lines than viewport height.
+	if m.resultsVp.TotalLineCount() <= m.resultsVp.Height() {
+		t.Fatalf(
+			"precondition: expected scrollable search results, got total=%d height=%d",
+			m.resultsVp.TotalLineCount(),
+			m.resultsVp.Height(),
+		)
+	}
 
 	_ = m.View().Content
 
@@ -3306,21 +3327,18 @@ func TestHandleScrollInSearchResults(t *testing.T) {
 
 	m = updateMainModel(t, m, tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 2,
-		Y:      z.StartY + 5,
+		Y:      z.StartY + 1,
 		Button: tea.MouseWheelDown,
 	}))
 
-	// If there are enough search results to scroll, YOffset should increase;
-	// otherwise it stays at 0. Either way the offset must not decrease.
 	yOffsetAfter := m.resultsVp.YOffset()
-	if yOffsetAfter < yOffsetBefore {
+	if yOffsetAfter <= yOffsetBefore {
 		t.Fatalf(
-			"expected YOffset to stay same or increase after scroll down, got before=%d after=%d",
+			"expected YOffset to increase after scroll down in scrollable results, before=%d after=%d",
 			yOffsetBefore,
 			yOffsetAfter,
 		)
 	}
-	_ = m.View().Content
 }
 
 // ---------------------------------------------------------------------------
@@ -5178,7 +5196,7 @@ func TestHandleScrollInFileTreeZone(t *testing.T) {
 
 	z := waitForZone(t, zoneFileTree)
 
-	// Scroll down in the file tree zone
+	// Scroll down in the file tree zone.
 	before := m.fileTree.ViewportYOffset()
 	updated, _ := m.handleScroll(tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 2,
@@ -5189,14 +5207,35 @@ func TestHandleScrollInFileTreeZone(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	// Scrolling down should increase or keep the same viewport Y offset
 	after := result.fileTree.ViewportYOffset()
-	if after < before {
-		t.Fatalf(
-			"expected viewport Y offset to increase or stay same after scroll down, before=%d after=%d",
-			before,
-			after,
-		)
+	if after > before {
+		// Content overflows — scroll up should decrease it.
+		updated2, _ := result.handleScroll(tea.MouseMotionMsg(tea.Mouse{
+			X:      z.StartX + 2,
+			Y:      z.StartY + 5,
+			Button: tea.MouseWheelUp,
+		}))
+		result2, ok := updated2.(mainModel)
+		if !ok {
+			t.Fatalf("unexpected model type %T", updated2)
+		}
+		after2 := result2.fileTree.ViewportYOffset()
+		if after2 >= after {
+			t.Fatalf(
+				"expected viewport Y offset to decrease after scroll up, before=%d after=%d",
+				after,
+				after2,
+			)
+		}
+	} else {
+		// Content fits viewport — offset must stay the same.
+		if after < before {
+			t.Fatalf(
+				"viewport offset must not decrease on scroll down, got before=%d after=%d",
+				before,
+				after,
+			)
+		}
 	}
 }
 
@@ -5233,7 +5272,7 @@ func TestHandleScrollUpInFileTreeZone(t *testing.T) {
 
 func TestHandleScrollInSearchResultsZone(t *testing.T) {
 	m := newTestMainModel(t)
-	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 40})
+	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 10})
 	m.searching = true
 	m.search.SetValue("") // match all
 	m.setSearchResults()
@@ -5244,8 +5283,9 @@ func TestHandleScrollInSearchResultsZone(t *testing.T) {
 	_ = m.View().Content
 
 	z := waitForZone(t, zoneSearchResults)
+	before := m.resultsVp.YOffset()
 
-	// Scroll down in search results
+	// Scroll down; with a short viewport the content should overflow.
 	updated, _ := m.handleScroll(tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 2,
 		Y:      z.StartY + 2,
@@ -5255,12 +5295,26 @@ func TestHandleScrollInSearchResultsZone(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	_ = result
+	after := result.resultsVp.YOffset()
+	if after >= before {
+		// Content fits the viewport — not enough results to scroll.
+		if after < 0 {
+			t.Fatalf("viewport offset must not be negative, got %d", after)
+		}
+		return
+	}
+	if after <= before {
+		t.Fatalf(
+			"expected search results YOffset to increase after scroll down, before=%d after=%d",
+			before,
+			after,
+		)
+	}
 }
 
 func TestHandleScrollUpInSearchResultsZone(t *testing.T) {
 	m := newTestMainModel(t)
-	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 40})
+	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 10})
 	m.searching = true
 	m.search.SetValue("") // match all
 	m.setSearchResults()
@@ -5268,13 +5322,14 @@ func TestHandleScrollUpInSearchResultsZone(t *testing.T) {
 	m.resultsVp.SetHeight(m.mainContentHeight() - searchHeight)
 	m.resultsVp.SetContent(m.resultsView())
 
-	// Scroll down first
+	// Scroll down first so we have room to scroll up.
 	m.resultsVp.ScrollDown(5)
 
 	_ = m.View().Content
 
 	z := waitForZone(t, zoneSearchResults)
 
+	before := m.resultsVp.YOffset()
 	updated, _ := m.handleScroll(tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 2,
 		Y:      z.StartY + 2,
@@ -5284,7 +5339,21 @@ func TestHandleScrollUpInSearchResultsZone(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	_ = result
+	after := result.resultsVp.YOffset()
+	if before == 0 {
+		// Content fits viewport — scroll-up is a valid no-op.
+		if after != 0 {
+			t.Fatalf("expected YOffset to stay 0 when no overflow, got %d", after)
+		}
+		return
+	}
+	if after >= before {
+		t.Fatalf(
+			"expected search results YOffset to decrease after scroll up, before=%d after=%d",
+			before,
+			after,
+		)
+	}
 }
 
 func TestHandleScrollInDiffViewerZoneUp(t *testing.T) {
@@ -5335,16 +5404,19 @@ func TestHandleDiffSelectionMotionAboveViewport(t *testing.T) {
 		t.Fatal("expected diffViewer to have selection")
 	}
 
-	// Set diff content so it has something to scroll
+	// Set diff content and scroll down so there is room to scroll up.
 	m.diffViewer.SetContent(strings.Repeat("line\n", 200))
+	m.diffViewer.ScrollDown(20)
+	before := m.diffViewer.YOffset()
+	if before == 0 {
+		t.Fatalf("precondition: expected non-zero YOffset after scrolling down")
+	}
 
 	_ = m.View().Content
 
 	z := waitForZone(t, zoneDiffViewer)
 
 	// Move cursor above the dir header area (paneY < 3)
-	// Use mouse Y position that puts paneY < DirHeaderHeight
-	before := m.diffViewer.YOffset()
 	updated, _ := m.handleDiffSelectionMotion(tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 5,
 		Y:      z.StartY, // paneY = 0, which is < DirHeaderHeight
@@ -5355,9 +5427,9 @@ func TestHandleDiffSelectionMotionAboveViewport(t *testing.T) {
 		t.Fatalf("unexpected model type %T", updated)
 	}
 	// Cursor above viewport should trigger ScrollUp(1)
-	if after := result.diffViewer.YOffset(); after > before {
+	if after := result.diffViewer.YOffset(); after >= before {
 		t.Fatalf(
-			"expected YOffset to decrease or stay same when dragging above viewport, before=%d after=%d",
+			"expected YOffset to decrease when dragging above viewport, before=%d after=%d",
 			before,
 			after,
 		)
@@ -5427,6 +5499,9 @@ func TestHandleDiffSelectionMotionInViewport(t *testing.T) {
 	// Move cursor within the viewport (paneY between DirHeaderHeight and DirHeaderHeight+vpHeight)
 	inViewportY := z.StartY + diffviewer.DirHeaderHeight + 5
 
+	// Record selection head before the motion.
+	_, headBefore, _, _ := m.diffViewer.DebugSelection()
+
 	updated, _ := m.handleDiffSelectionMotion(tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 5,
 		Y:      inViewportY,
@@ -5438,6 +5513,15 @@ func TestHandleDiffSelectionMotionInViewport(t *testing.T) {
 	}
 	if !result.diffViewer.IsSelecting() {
 		t.Fatal("expected selection to remain active after in-viewport motion")
+	}
+	// The selection head must have been updated by the motion event.
+	_, headAfter, _, _ := result.diffViewer.DebugSelection()
+	if headAfter == headBefore {
+		t.Fatalf(
+			"expected selection head to change after in-viewport motion, before=%+v after=%+v",
+			headBefore,
+			headAfter,
+		)
 	}
 }
 
@@ -6672,14 +6756,29 @@ func TestHandleDiffSelectionMotionClampedXEdgeCases(t *testing.T) {
 	vpHeight := m.diffViewer.Height()
 	inViewportY := z.StartY + diffviewer.DirHeaderHeight + vpHeight/2
 
+	// Record selection head before the motion.
+	_, headBefore, _, _ := m.diffViewer.DebugSelection()
+
 	result, _ := m.handleDiffSelectionMotion(tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 5, // paneX = 5, which should be >= 0 and < vpWidth
 		Y:      inViewportY,
 		Button: tea.MouseLeft,
 	}))
-	_, ok := result.(mainModel)
+	model, ok := result.(mainModel)
 	if !ok {
 		t.Fatalf("unexpected model type %T", result)
+	}
+	if !model.diffViewer.IsSelecting() {
+		t.Fatal("expected selection to remain active after clamped X motion")
+	}
+	// The selection head should have been updated to reflect the motion.
+	_, headAfter, _, _ := model.diffViewer.DebugSelection()
+	if headAfter == headBefore {
+		t.Fatalf(
+			"expected selection head to change after clamped X motion, before=%+v after=%+v",
+			headBefore,
+			headAfter,
+		)
 	}
 }
 
