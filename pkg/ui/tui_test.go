@@ -5047,7 +5047,11 @@ func TestHandleScrollInFileTreeZone(t *testing.T) {
 	// Scrolling down should increase or keep the same viewport Y offset
 	after := result.fileTree.ViewportYOffset()
 	if after < before {
-		t.Fatalf("expected viewport Y offset to increase or stay same after scroll down, before=%d after=%d", before, after)
+		t.Fatalf(
+			"expected viewport Y offset to increase or stay same after scroll down, before=%d after=%d",
+			before,
+			after,
+		)
 	}
 }
 
@@ -5077,7 +5081,11 @@ func TestHandleScrollUpInFileTreeZone(t *testing.T) {
 	}
 	after := result.fileTree.ViewportYOffset()
 	if after > before {
-		t.Fatalf("expected viewport Y offset to decrease or stay same after scroll up, before=%d after=%d", before, after)
+		t.Fatalf(
+			"expected viewport Y offset to decrease or stay same after scroll up, before=%d after=%d",
+			before,
+			after,
+		)
 	}
 }
 
@@ -5171,7 +5179,11 @@ func TestHandleScrollInDiffViewerZoneUp(t *testing.T) {
 	}
 	after := result.diffViewer.YOffset()
 	if after > before {
-		t.Fatalf("expected YOffset to decrease or stay same after scroll up, before=%d after=%d", before, after)
+		t.Fatalf(
+			"expected YOffset to decrease or stay same after scroll up, before=%d after=%d",
+			before,
+			after,
+		)
 	}
 }
 
@@ -5214,7 +5226,11 @@ func TestHandleDiffSelectionMotionAboveViewport(t *testing.T) {
 	}
 	// Cursor above viewport should trigger ScrollUp(1)
 	if after := result.diffViewer.YOffset(); after > before {
-		t.Fatalf("expected YOffset to decrease or stay same when dragging above viewport, before=%d after=%d", before, after)
+		t.Fatalf(
+			"expected YOffset to decrease or stay same when dragging above viewport, before=%d after=%d",
+			before,
+			after,
+		)
 	}
 	// Selection should still be active
 	if !result.diffViewer.IsSelecting() {
@@ -5256,7 +5272,11 @@ func TestHandleDiffSelectionMotionBelowViewport(t *testing.T) {
 	}
 	// Cursor below viewport should trigger ScrollDown(1)
 	if result.diffViewer.YOffset() <= before {
-		t.Fatalf("expected YOffset to increase when dragging below viewport, before=%d after=%d", before, result.diffViewer.YOffset())
+		t.Fatalf(
+			"expected YOffset to increase when dragging below viewport, before=%d after=%d",
+			before,
+			result.diffViewer.YOffset(),
+		)
 	}
 	if !result.diffViewer.IsSelecting() {
 		t.Fatal("expected selection to remain active after below-viewport motion")
@@ -5515,6 +5535,7 @@ func TestHandleMouseMotionWithDiffSelection(t *testing.T) {
 		t.Fatal("expected selection to remain active during drag motion")
 	}
 }
+
 // ---------------------------------------------------------------------------
 
 func TestHandleMouseClickStartsDiffSelection(t *testing.T) {
@@ -5575,7 +5596,11 @@ func TestHandleMouseWheelRoutedToHandleScroll(t *testing.T) {
 	}
 	after := result.diffViewer.YOffset()
 	if after < before {
-		t.Fatalf("expected YOffset to increase or stay same after wheel down, before=%d after=%d", before, after)
+		t.Fatalf(
+			"expected YOffset to increase or stay same after wheel down, before=%d after=%d",
+			before,
+			after,
+		)
 	}
 }
 
@@ -6523,8 +6548,8 @@ func TestHandleDiffSelectionMotionDiffPanePointFailsCoverage(t *testing.T) {
 func TestFetchFileTreeGenuinelyBadInput(t *testing.T) {
 	// Inputs where gitdiff.Parse deterministically returns an error.
 	tests := []struct {
-		name   string
-		input  string
+		name  string
+		input string
 	}{
 		{
 			name:  "bad_hunk_range",
