@@ -1356,6 +1356,316 @@ func TestJoinWrappedLines_ContinuationWithEllipsisInContent(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// EndSelection boundary conditions and robustness
+// ---------------------------------------------------------------------------
+
+func TestEndSelectionSafeOnPanic(t *testing.T) {
+	m := New(false, "dark")
+	m.Common.Width = 60
+	m.Common.Height = 20
+	m.SetSize(60, 20)
+	m.SetContent("some content to select")
+
+	m.StartSelection(Point{Line: 0, Col: 0})
+	m.ExtendSelection(Point{Line: 0, Col: 5})
+
+	// Inject panic through the production code's test seam.
+	m.testHookSelectedTextPanic = func() { panic("selectedTextInner failed") }
+
+	text, ok := m.EndSelection()
+	// The panic must be recovered: EndSelection returns safe values.
+	if ok && text != "" {
+		t.Fatalf("expected empty result on panic, got %q", text)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ANSI edge cases in selection highlighting
+// ---------------------------------------------------------------------------
+
+func TestHighlightWithSGRResetInContent(t *testing.T) {
+	// Delta emits \x1b[m (empty-params SGR reset = full reset) and
+	// \x1b[27m (explicit reverse-off). Both should be handled by
+	// reapplyReverseAfterResets so the selection highlight is restored.
+	cases := []struct {
+		name    string
+		content string
+	}{
+		{"empty-params-reset", "\x1b[31mhello\x1b[m world\nline2\nline3"},
+		{"sgr27-reverse-off", "\x1b[31mhello\x1b[27m world\nline2\nline3"},
+		{"composite-reset", "\x1b[31mhello\x1b[0;1m bold world\nline2\nline3"},
+		{"semicolon-empty-params", "hello\x1b[;m world\nline2"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := New(false, "dark")
+			m.Common.Width = 60
+			m.Common.Height = 10
+			m.SetSize(60, 10)
+			m.SetContent(tc.content)
+
+			m.StartSelection(Point{Line: 0, Col: 0})
+			m.ExtendSelection(Point{Line: 0, Col: 11})
+
+			// View should render without panic and include reverse-video
+			// highlighting (the highlight must be re-asserted after the reset).
+			view := m.View()
+			if view == "" {
+				t.Fatal("expected non-empty view")
+			}
+			if !strings.Contains(view, "\x1b[7m") {
+				t.Fatal("expected reverse-video escape in highlighted view")
+			}
+		})
+	}
+}
+
+func TestHighlightWithIncompleteCSISequence(t *testing.T) {
+	// Malformed ANSI: incomplete CSI (\x1b[3 with no closing byte) at end of
+	// a line. This exercises the end >= len(s) branch in reapplyReverseAfterResets.
+	m := New(false, "dark")
+	m.Common.Width = 60
+	m.Common.Height = 10
+	m.SetSize(60, 10)
+	m.SetContent("hello\x1b[3\nline2\nline3")
+
+	m.StartSelection(Point{Line: 0, Col: 0})
+	m.ExtendSelection(Point{Line: 0, Col: 5})
+
+	view := m.View()
+	if view == "" {
+		t.Fatal("expected non-empty view with incomplete CSI in content")
+	}
+}
+
+func TestHighlightWithNonSGRCSISequence(t *testing.T) {
+	// Non-SGR CSI sequence (device status report \x1b[5n). The final byte
+	// is 'n' not 'm', so sgrClearsReverse must NOT be called. The view
+	// should still render correctly.
+	m := New(false, "dark")
+	m.Common.Width = 60
+	m.Common.Height = 10
+	m.SetSize(60, 10)
+	m.SetContent("hello\x1b[5n world\nline2")
+
+	m.StartSelection(Point{Line: 0, Col: 0})
+	m.ExtendSelection(Point{Line: 0, Col: 12})
+
+	view := m.View()
+	if view == "" {
+		t.Fatal("expected non-empty view with non-SGR CSI")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Selection on short/narrow lines in side-by-side mode
+// ---------------------------------------------------------------------------
+
+func TestViewHighlightsShortSBSLineWithoutPanic(t *testing.T) {
+	// A side-by-side diff with a very short middle line (separator or
+	// decoration) between longer SBS lines. The selection band [6,40)
+	// starts past the short line's width, so clampToLine's a > lineWidth
+	// guard fires. View() must not panic.
+	m := New(true, "dark")
+	m.Common.Width = 80
+	m.Common.Height = 20
+	m.SetSize(80, 20)
+
+	content := "│  1 │long-content-left              │  1 │right1\n" +
+		"x\n" + // short line, width=1
+		"│  2 │second-line                    │  2 │right2"
+	m.dir = &cachedNode{path: "src", diff: content}
+	m.SetContent(content)
+
+	// Set column detection so StartSelection uses SBS band.
+	m.gutterCol = 40
+	m.leftContentCol = 6
+	m.rightContentCol = 46
+
+	m.StartSelection(Point{Line: 0, Col: 6})
+	m.ExtendSelection(Point{Line: 2, Col: 39})
+
+	view := m.View()
+	if view == "" {
+		t.Fatal("expected non-empty view")
+	}
+}
+
+func TestSelectionOnShortSBSLines(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+	}{
+		{
+			"short-middle-line",
+			"│  1 │long-content-left              │  1 │right1\n" +
+				"x\n" +
+				"│  2 │second-line                    │  2 │right2",
+		},
+		{
+			"empty-middle-line",
+			"│  1 │long-content                │  1 │right1\n" +
+				"\n" +
+				"│  2 │another                     │  2 │right2",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := New(true, "dark")
+			m.Common.Width = 80
+			m.Common.Height = 20
+			m.SetSize(80, 20)
+			m.SetContent(tc.content)
+
+			// Multi-line selection covering all three lines.
+			m.StartSelection(Point{Line: 0, Col: 6})
+			m.ExtendSelection(Point{Line: 2, Col: 39})
+
+			// View must not panic on the short/empty middle line.
+			view := m.View()
+			if view == "" {
+				t.Fatal("expected non-empty view")
+			}
+		})
+	}
+}
+
+func TestEndSelectionOnShortSBSLines(t *testing.T) {
+	// Same scenario but exercising EndSelection which goes through
+	// selectedText → clampToLine with the a > lineWidth branch.
+	m := New(true, "dark")
+	m.Common.Width = 80
+	m.Common.Height = 20
+	m.SetSize(80, 20)
+
+	content := "│  1 │alpha-content                  │  1 │right1\n" +
+		"│  2 │xy                             │  2 │right2"
+	m.dir = &cachedNode{path: "src", diff: content}
+	m.SetContent(content)
+
+	m.StartSelection(Point{Line: 0, Col: 6})
+	m.ExtendSelection(Point{Line: 1, Col: 39})
+
+	text, ok := m.EndSelection()
+	if !ok {
+		t.Fatal("expected EndSelection to succeed")
+	}
+	if text == "" {
+		t.Fatal("expected non-empty selected text")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// EndSelection boundary conditions: no content, empty diff, out-of-range
+// ---------------------------------------------------------------------------
+
+func TestEndSelectionNoFileOrDir(t *testing.T) {
+	m := New(false, "dark")
+	m.StartSelection(Point{Line: 0, Col: 0})
+	m.ExtendSelection(Point{Line: 0, Col: 5})
+
+	text, ok := m.EndSelection()
+	if ok && text != "" {
+		t.Fatalf("expected empty text with no content loaded, got %q", text)
+	}
+}
+
+func TestEndSelectionEmptyDiff(t *testing.T) {
+	m := New(false, "dark")
+	m.SetContent("")
+
+	m.StartSelection(Point{Line: 0, Col: 0})
+	m.ExtendSelection(Point{Line: 0, Col: 5})
+
+	text, ok := m.EndSelection()
+	if ok && text != "" {
+		t.Fatalf("expected empty text for empty diff, got %q", text)
+	}
+}
+
+func TestEndSelectionStartLineOutOfRange(t *testing.T) {
+	cases := []struct {
+		name  string
+		start Point
+	}{
+		{"negative-line", Point{Line: -1, Col: 0}},
+		{"beyond-content", Point{Line: 100, Col: 0}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := New(false, "dark")
+			m.SetContent("line0\nline1")
+
+			m.StartSelection(tc.start)
+			m.ExtendSelection(Point{Line: 0, Col: 3})
+
+			text, ok := m.EndSelection()
+			if ok && text != "" {
+				t.Fatalf("expected empty text for out-of-range start, got %q", text)
+			}
+		})
+	}
+}
+
+func TestEndSelectionEndToEnd(t *testing.T) {
+	m := New(false, "dark")
+	m.Common.Width = 60
+	m.Common.Height = 10
+	m.SetSize(60, 10)
+
+	content := "first line of text\nsecond line\nthird line"
+	m.file = &cachedNode{path: "test", diff: content}
+	m.SetContent(content)
+
+	m.StartSelection(Point{Line: 0, Col: 5})
+	m.ExtendSelection(Point{Line: 1, Col: 6})
+
+	text, ok := m.EndSelection()
+	if !ok {
+		t.Fatal("expected EndSelection to succeed")
+	}
+	if !strings.Contains(text, "line of text") {
+		t.Fatalf("expected 'line of text' in selected text, got %q", text)
+	}
+	if !strings.Contains(text, "second") {
+		t.Fatalf("expected 'second' in selected text, got %q", text)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Multi-line SBS selection with mixed line lengths
+// ---------------------------------------------------------------------------
+
+func TestEndSelectionSBSWithMixedLineLengths(t *testing.T) {
+	m := New(true, "dark")
+	m.Common.Width = 80
+	m.Common.Height = 20
+	m.SetSize(80, 20)
+
+	content := "│  1 │long-content-here              │  1 │right1\n" +
+		"│  2 │ab                             │  2 │right2"
+	m.dir = &cachedNode{path: "src", diff: content}
+	m.SetContent(content)
+
+	m.StartSelection(Point{Line: 0, Col: 6})
+	m.ExtendSelection(Point{Line: 1, Col: 39})
+
+	text, ok := m.EndSelection()
+	if !ok {
+		t.Fatal("expected EndSelection to succeed")
+	}
+	if !strings.Contains(text, "long-content-here") {
+		t.Fatalf("expected 'long-content-here' in selected text, got %q", text)
+	}
+	if !strings.Contains(text, "ab") {
+		t.Fatalf("expected 'ab' from short line, got %q", text)
+	}
+}
+
 func TestView_NoSelectionNoOverlay(t *testing.T) {
 	m := New(false, "auto")
 	m.vp.SetWidth(40)

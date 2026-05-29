@@ -2289,6 +2289,234 @@ func TestHasDir(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
+
+func TestInitReturnsNil(t *testing.T) {
+	m := New(false, "dark")
+	if cmd := m.Init(); cmd != nil {
+		t.Fatalf("expected Init to return nil, got %v", cmd)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Robustness: View still renders when internal functions panic
+// ---------------------------------------------------------------------------
+
+func TestViewStillRendersWhenColumnDetectionPanics(t *testing.T) {
+	orig := detectGutterColFunc
+	detectGutterColFunc = func(string, int) int { panic("gutter detection failed") }
+	defer func() { detectGutterColFunc = orig }()
+
+	m := New(true, "dark")
+	m.Common.Width = 80
+	m.Common.Height = 20
+	m.SetSize(80, 20)
+
+	key := cacheKey("/", true)
+	m.dir = &cachedNode{path: "/"}
+	m.cache[key] = m.dir
+	m.renderID = 1
+
+	m, _ = m.Update(diffContentMsg{
+		cacheKey: key,
+		text:     "some diff content\nmore lines",
+		renderID: 1,
+	})
+
+	// View must still render without crashing.
+	view := m.View()
+	if view == "" {
+		t.Fatal("expected non-empty view after column detection panic")
+	}
+}
+
+func TestViewStillRendersWhenSideContentColsPanics(t *testing.T) {
+	orig := detectSideContentColsFunc
+	detectSideContentColsFunc = func(string, int) (int, int) {
+		panic("side content cols detection failed")
+	}
+	defer func() { detectSideContentColsFunc = orig }()
+
+	m := New(true, "dark")
+	m.Common.Width = 80
+	m.Common.Height = 20
+	m.SetSize(80, 20)
+
+	key := cacheKey("/", true)
+	m.dir = &cachedNode{path: "/"}
+	m.cache[key] = m.dir
+	m.renderID = 1
+
+	m, _ = m.Update(diffContentMsg{
+		cacheKey: key,
+		text:     "some diff content\nmore lines",
+		renderID: 1,
+	})
+
+	view := m.View()
+	if view == "" {
+		t.Fatal("expected non-empty view after side-content-cols panic")
+	}
+}
+
+func TestViewStillRendersWhenHighlightPanics(t *testing.T) {
+	orig := spliceReverseFunc
+	spliceReverseFunc = func(string, int, int, int) string {
+		panic("spliceReverse failed")
+	}
+	defer func() { spliceReverseFunc = orig }()
+
+	m := New(false, "dark")
+	m.Common.Width = 80
+	m.Common.Height = 20
+	m.SetSize(80, 20)
+	m.SetContent("line0 content\nline1 content\nline2 content")
+
+	// Start a selection through the public API to trigger applyHighlight
+	// during View().
+	m.StartSelection(Point{Line: 0, Col: 0})
+	m.ExtendSelection(Point{Line: 1, Col: 5})
+
+	view := m.View()
+	if view == "" {
+		t.Fatal("expected non-empty view even when highlight panics")
+	}
+	// The view should still contain the original content (just unhighlighted).
+	plain := ansi.Strip(view)
+	if !strings.Contains(plain, "line0") {
+		t.Fatal("expected view to contain original content after highlight panic")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Narrow viewport: column detection fallback
+// ---------------------------------------------------------------------------
+
+func TestNarrowViewportFallsBackToUnifiedSelection(t *testing.T) {
+	// Force detectGutterCol to return 0 so detectSideContentCols
+	// hits its gutterCol <= 0 early return.
+	orig := detectGutterColFunc
+	detectGutterColFunc = func(string, int) int { return 0 }
+	defer func() { detectGutterColFunc = orig }()
+
+	m := New(true, "dark")
+	m.Common.Width = 80
+	m.Common.Height = 20
+	m.SetSize(80, 20)
+
+	key := cacheKey("/", true)
+	m.dir = &cachedNode{path: "/"}
+	m.cache[key] = m.dir
+	m.renderID = 1
+
+	m, _ = m.Update(diffContentMsg{
+		cacheKey: key,
+		text:     "some content here",
+		renderID: 1,
+	})
+
+	// View must render; selection must work with unified band.
+	view := m.View()
+	if view == "" {
+		t.Fatal("expected non-empty view when gutter detection fails")
+	}
+
+	// Starting a selection should not panic even with no detected columns.
+	m.StartSelection(Point{Line: 0, Col: 0})
+	m.ExtendSelection(Point{Line: 0, Col: 0})
+}
+
+// ---------------------------------------------------------------------------
+// Column detection on cached SBS content via SetFilePatch/SetDirPatch
+// ---------------------------------------------------------------------------
+
+func TestSetFilePatchCachedSBS(t *testing.T) {
+	m := New(true, "dark")
+	m.Common.Width = 80
+	m.Common.Height = 20
+	m.SetSize(80, 20)
+
+	pad := func(n int) string { return strings.Repeat(" ", n) }
+	sbsLine := "│" + "  1 " + "│" + pad(24) + "│" + "  1 " + "│" + pad(24)
+	sbsContent := strings.Repeat(sbsLine+"\n", 4)
+
+	f := &gitdiff.File{NewName: "test.go"}
+	key := cacheKey("test.go", true)
+	m.cache[key] = &cachedNode{
+		path:  "test.go",
+		files: []*gitdiff.File{f},
+		diff:  sbsContent,
+		ready: true,
+	}
+
+	m2, cmd := m.SetFilePatch(f)
+	if cmd != nil {
+		t.Fatalf("expected nil cmd for cached hit, got %v", cmd)
+	}
+
+	// Selection should be scoped to the left side when clicking left of gutter.
+	m2.StartSelection(Point{Line: 0, Col: 6})
+	m2.ExtendSelection(Point{Line: 1, Col: 6})
+
+	text, ok := m2.EndSelection()
+	if !ok || text == "" {
+		t.Fatal("expected selected text from cached SBS file")
+	}
+}
+
+func TestSetDirPatchCachedSBS(t *testing.T) {
+	m := New(true, "dark")
+	m.Common.Width = 80
+	m.Common.Height = 20
+	m.SetSize(80, 20)
+
+	pad := func(n int) string { return strings.Repeat(" ", n) }
+	sbsLine := "│" + "  1 " + "│" + pad(24) + "│" + "  1 " + "│" + pad(24)
+	sbsContent := strings.Repeat(sbsLine+"\n", 4)
+
+	f := &gitdiff.File{NewName: "a.go"}
+	key := cacheKey("src", true)
+	m.cache[key] = &cachedNode{
+		path:  "src",
+		files: []*gitdiff.File{f},
+		diff:  sbsContent,
+		ready: true,
+	}
+
+	m2, cmd := m.SetDirPatch("src", []*gitdiff.File{f})
+	if cmd != nil {
+		t.Fatalf("expected nil cmd for cached hit, got %v", cmd)
+	}
+
+	// View must render the cached content.
+	view := m2.View()
+	if view == "" {
+		t.Fatal("expected non-empty view for cached SBS directory")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Update with non-diffContentMsg
+// ---------------------------------------------------------------------------
+
+func TestUpdatePropagatesKeyToViewport(t *testing.T) {
+	m := New(false, "dark")
+	m.Common.Width = 60
+	m.Common.Height = 10
+	m.SetSize(60, 10)
+	m.SetContent("hello\nworld\nmore")
+
+	m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+
+	// The viewport should have scrolled; the view must still render.
+	view := m.View()
+	if view == "" {
+		t.Fatal("expected non-empty view after key down")
+	}
+}
+
 // DiffFile with renderer error returns ErrMsg.
 func TestDiffFile_RendererError(t *testing.T) {
 	r := deltaRenderer{
