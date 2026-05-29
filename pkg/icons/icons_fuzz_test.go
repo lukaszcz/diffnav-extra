@@ -26,7 +26,12 @@ func FuzzGetIcon(f *testing.F) {
 		if isDir {
 			// Result should be a valid directory icon or the default.
 			if Directories[filename] == "" && result != DefaultDirIcon {
-				t.Errorf("GetIcon(%q, true) = %q, want DefaultDirIcon %q", filename, result, DefaultDirIcon)
+				t.Errorf(
+					"GetIcon(%q, true) = %q, want DefaultDirIcon %q",
+					filename,
+					result,
+					DefaultDirIcon,
+				)
 			}
 		}
 	})

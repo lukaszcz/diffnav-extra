@@ -54,7 +54,12 @@ func FuzzClampToViewportWidth(f *testing.F) {
 			t.Errorf("clampToViewportWidth(%d, %d) = %d, should be >= 0", x, vpWidth, result)
 		}
 		if vpWidth <= 0 && result != x {
-			t.Errorf("clampToViewportWidth(%d, %d) = %d, should be x when vpWidth<=0", x, vpWidth, result)
+			t.Errorf(
+				"clampToViewportWidth(%d, %d) = %d, should be x when vpWidth<=0",
+				x,
+				vpWidth,
+				result,
+			)
 		}
 	})
 }
@@ -70,10 +75,22 @@ func FuzzGetFileName(f *testing.F) {
 		result := filenode.GetFileName(file)
 		// Result must be either the newName (if non-empty) or oldName
 		if newName != "" && result != newName {
-			t.Errorf("GetFileName({OldName=%q, NewName=%q}) = %q, want %q", oldName, newName, result, newName)
+			t.Errorf(
+				"GetFileName({OldName=%q, NewName=%q}) = %q, want %q",
+				oldName,
+				newName,
+				result,
+				newName,
+			)
 		}
 		if newName == "" && result != oldName {
-			t.Errorf("GetFileName({OldName=%q, NewName=%q}) = %q, want %q", oldName, newName, result, oldName)
+			t.Errorf(
+				"GetFileName({OldName=%q, NewName=%q}) = %q, want %q",
+				oldName,
+				newName,
+				result,
+				oldName,
+			)
 		}
 	})
 }

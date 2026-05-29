@@ -437,6 +437,10 @@ func (m *Model) Width() int {
 	return m.t.Width()
 }
 
+func (m *Model) Height() int {
+	return m.t.Height()
+}
+
 // ViewportYOffset returns the tree's current Y scroll offset.
 func (m Model) ViewportYOffset() int {
 	return m.t.ViewportYOffset()

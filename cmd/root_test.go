@@ -710,9 +710,30 @@ func TestRunProgramTTYDifferentFilesCloseError(t *testing.T) {
 	runProgramFn = func(p *tea.Program) (tea.Model, error) { return nil, nil }
 	origExit := exitFunc
 	defer func() { exitFunc = origExit }()
-	exitFunc = func(int) {}
+	exitCode := -1
+	exitFunc = func(code int) { exitCode = code }
+
+	closeCallCount := 0
+	origCloseFile := closeFile
+	defer func() { closeFile = origCloseFile }()
+	closeFile = func(f *os.File) error {
+		closeCallCount++
+		return f.Close()
+	}
 
 	runProgram("input", config.DefaultConfig())
+
+	// BothTTY files are distinct, so closeFile should be called twice.
+	if closeCallCount != 2 {
+		t.Errorf(
+			"expected closeFile called twice for different-file TTY, got %d calls",
+			closeCallCount,
+		)
+	}
+	// runProgram should not call exitFunc on successful completion.
+	if exitCode != -1 {
+		t.Errorf("expected no exit call on success, got exit code %d", exitCode)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -720,18 +741,23 @@ func TestRunProgramTTYDifferentFilesCloseError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestExecuteVersionFlag(t *testing.T) {
-	// Test execute() with --version flag via cobra.
-	// This exercises the ColorSchemeFunc closure.
-	rootCmd.SetArgs([]string{"--version"})
-	defer rootCmd.SetArgs(nil)
+	// Test execute() with --version flag via a subprocess
+	// because fang.Execute/cobra calls os.Exit(0) directly for --version,
+	// which cannot be intercepted via exitFunc.
+	if os.Getenv("TEST_VERSION_FLAG") == "1" {
+		rootCmd.SetArgs([]string{"--version"})
+		execute(context.Background())
+		return
+	}
 
-	// fang.Execute calls root.ExecuteContext which handles --version
-	// by printing and calling os.Exit(0). We catch that with exitFunc.
-	origExit := exitFunc
-	defer func() { exitFunc = origExit }()
-	exitFunc = func(int) {}
-
-	_ = execute(context.Background())
+	cmd := execTestCommand(t, "TEST_VERSION_FLAG", "1")
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("expected --version to exit cleanly, got error: %v", err)
+	}
+	if !bytes.Contains(output, []byte("version")) {
+		t.Errorf("expected version output to contain 'version', got %q", output)
+	}
 }
 
 func TestExecuteCallsExitOnError(t *testing.T) {
@@ -987,7 +1013,10 @@ func TestCloseTTYDifferentFiles(t *testing.T) {
 	closeTTY(ttyIn, ttyOut)
 
 	if closeCallCount != 2 {
-		t.Errorf("expected closeFile called twice for different TTY files, got %d calls", closeCallCount)
+		t.Errorf(
+			"expected closeFile called twice for different TTY files, got %d calls",
+			closeCallCount,
+		)
 	}
 	if len(closedFiles) != 2 {
 		t.Errorf("expected two distinct files closed, got %d", len(closedFiles))
@@ -1245,12 +1274,10 @@ func TestDefaultInjectables(t *testing.T) {
 	}
 
 	// openTTY default: call the original function.
-	// tea.OpenTTY() needs a real terminal. In test mode it will fail.
+	// tea.OpenTTY() needs a real terminal. In test mode it should fail.
 	_, _, ttyErr := openTTY()
 	if ttyErr == nil {
-		t.Log("openTTY succeeded (running in real terminal)")
-	} else {
-		t.Logf("openTTY failed as expected in test: %v", ttyErr)
+		t.Error("expected openTTY to fail in test environment without a real terminal")
 	}
 
 	// runProgramFn default: the function body `return p.Run()` is at line 121.
@@ -1266,7 +1293,11 @@ func TestDefaultInjectables(t *testing.T) {
 			t.Logf("runProgramFn panicked as expected in test: %v", r)
 		}
 	}()
-	_, _ = runProgramFn(prog)
+	_, runErr := runProgramFn(prog)
+	// runProgramFn should return an error when called with an invalid program
+	if runErr == nil {
+		t.Error("expected runProgramFn to return an error for program with no input/output")
+	}
 }
 
 func TestSetupLoggingCloseFileError(t *testing.T) {
@@ -1294,19 +1325,24 @@ func TestSetupLoggingCloseFileError(t *testing.T) {
 
 	// setupLogging will open the file, set up logging, and the defer
 	// will call closeFile which returns an error → log.Fatal.
-	// log.Fatal calls os.Exit by default. Override exitFunc.
+	// log.Fatal calls os.Exit by default. Override exitFunc to catch it.
+	exitCalled := false
+	exitCode := -1
 	origExit := exitFunc
 	defer func() { exitFunc = origExit }()
-	exitFunc = func(int) {}
-
-	// We can't easily call setupLogging again because it sets global logger state.
-	// Instead, directly test the defer pattern.
-	// Actually, let's just verify that calling closeFile with an error path
-	// triggers the log.Fatal branch.
-	defer func() { recover() }() // log.Fatal may panic in tests
+	exitFunc = func(code int) {
+		exitCalled = true
+		exitCode = code
+	}
 
 	cleanup := setupLogging()
 	cleanup()
 	// The cleanup function closes the log file, triggering the error path when
-	// closeFile returns an error.
+	// closeFile returns an error, which calls log.Fatal → exitFunc(1).
+	if !exitCalled {
+		t.Error("expected exitFunc to be called when closeFile returns an error")
+	}
+	if exitCode != 1 {
+		t.Errorf("expected exit code 1 for close file error, got %d", exitCode)
+	}
 }

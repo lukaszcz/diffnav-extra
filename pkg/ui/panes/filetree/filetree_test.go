@@ -514,6 +514,14 @@ func TestGoToBottom(t *testing.T) {
 	if node == nil {
 		t.Fatal("expected node at bottom")
 	}
+	fn, ok := node.GivenValue().(*filenode.FileNode)
+	if !ok {
+		t.Fatalf("expected file node at bottom, got %T", node.GivenValue())
+	}
+	name := filenode.GetFileName(fn.File)
+	if name != "c.txt" {
+		t.Fatalf("expected c.txt at bottom, got %s", name)
+	}
 }
 
 func TestGoToTop(t *testing.T) {
@@ -523,6 +531,12 @@ func TestGoToTop(t *testing.T) {
 	node := m.GetCurrNode()
 	if node == nil {
 		t.Fatal("expected node at top")
+	}
+	// GoToTop should move to the first node; verify it is not the bottom node.
+	bottomNode := m.GetCurrNode()
+	m.GoToBottom()
+	if bottomNode.YOffset() == m.GetCurrNode().YOffset() {
+		t.Fatal("expected GoToTop to land on a different node than GoToBottom")
 	}
 }
 
@@ -645,6 +659,9 @@ func TestSetSize(t *testing.T) {
 	if m.Width() != 60 {
 		t.Fatalf("expected width 60, got %d", m.Width())
 	}
+	if m.Height() != 30 {
+		t.Fatalf("expected height 30, got %d", m.Height())
+	}
 }
 
 func TestWidth(t *testing.T) {
@@ -684,6 +701,9 @@ func TestGetCurrNodeDesendantDiffsFileNode(t *testing.T) {
 	files := m.GetCurrNodeDesendantDiffs()
 	if len(files) != 1 {
 		t.Fatalf("expected 1 file, got %d", len(files))
+	}
+	if filenode.GetFileName(files[0]) != "app/main.go" {
+		t.Fatalf("expected app/main.go, got %s", filenode.GetFileName(files[0]))
 	}
 }
 
@@ -759,24 +779,23 @@ func TestNodeDescendantDiffsRootDirNode(t *testing.T) {
 
 func TestNodeDescendantDiffsFileNilFile(t *testing.T) {
 	m := newTestTreeModel([]string{"a.txt"})
-	// Create a FileNode with nil File — testing the nil guard.
-	// We can't use tree.Root with a FileNode that has nil File because
-	// the tree library calls String() which dereferences File. Instead,
-	// test the code path by finding an existing FileNode and replacing its File.
-	m.GoToTop()
-	m.Down() // Move to the first file
+	m.GoToBottom()
 	node := m.GetCurrNode()
 	if node == nil {
 		t.Fatal("expected a file node")
 	}
-	if fn, ok := node.GivenValue().(*filenode.FileNode); ok && fn.File == nil {
-		files := m.NodeDescendantDiffs(node)
-		if len(files) != 0 {
-			t.Fatalf("expected 0 files for FileNode with nil File, got %d", len(files))
-		}
+	fn, ok := node.GivenValue().(*filenode.FileNode)
+	if !ok {
+		t.Fatal("expected FileNode")
 	}
-	// Otherwise this specific code path isn't easily reachable without panics;
-	// it's a defensive guard in the real code.
+	// Save and restore the File to test the nil guard.
+	savedFile := fn.File
+	fn.File = nil
+	files := m.NodeDescendantDiffs(node)
+	fn.File = savedFile
+	if len(files) != 0 {
+		t.Fatalf("expected 0 files for FileNode with nil File, got %d", len(files))
+	}
 }
 
 // --- SetCursorNoScroll ---

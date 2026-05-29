@@ -2,6 +2,7 @@ package diffviewer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -683,6 +684,12 @@ func TestApplyHighlight_PanicRecovery(t *testing.T) {
 	out := m.applyHighlight(vpView)
 	if out == "" {
 		t.Fatalf("expected non-empty output from applyHighlight")
+	}
+	// When active=true and has=false (selection in progress but not finalized),
+	// the visible content should specify a selection range, so check that
+	// reverse-video escape codes are present.
+	if !strings.Contains(out, "\x1b[7m") {
+		t.Fatal("expected reverse-video escape in applyHighlight output for active selection")
 	}
 }
 
@@ -2208,6 +2215,9 @@ func TestEndSelection_NotActive(t *testing.T) {
 // runDelta: context canceled after process starts covers the ctxErr path.
 // We use an already-canceled context so the ctxErr path is exercised deterministically.
 func TestRunDelta_ContextCanceledMidRun(t *testing.T) {
+	if !deltaAvailable() {
+		t.Skip("delta not installed, skipping runDelta test")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	// Cancel immediately so the context is already expired when runDelta checks.
 	cancel()
@@ -2228,9 +2238,18 @@ func TestRunDelta_ContextCanceledMidRun(t *testing.T) {
 	}
 }
 
+// deltaAvailable checks if the delta binary is installed.
+func deltaAvailable() bool {
+	_, err := exec.LookPath("delta")
+	return err == nil
+}
+
 // runDelta: bad args cause delta to exit with an error, covering the
 // waitErr != nil and stderr branches.
 func TestRunDelta_BadArgsError(t *testing.T) {
+	if !deltaAvailable() {
+		t.Skip("delta not installed, skipping runDelta test")
+	}
 	_, err := runDelta(
 		context.Background(),
 		[]string{"--invalid-flag-that-does-not-exist"},
@@ -2248,6 +2267,9 @@ func TestRunDelta_BadArgsError(t *testing.T) {
 // reliably without context cancellation (which takes a different branch).
 // We test what we can and document the untestable branch.
 func TestRunDelta_KilledProcess(t *testing.T) {
+	if !deltaAvailable() {
+		t.Skip("delta not installed, skipping runDelta test")
+	}
 	// Use a context with very short timeout to kill the process before it
 	// can produce any output or stderr. The timeout path returns ctxErr
 	// before the waitErr/stderr check, so this branch mainly documents the
@@ -2261,6 +2283,9 @@ func TestRunDelta_KilledProcess(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error when delta process is killed by context timeout")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected error to wrap context.DeadlineExceeded, got %v", err)
 	}
 }
 
@@ -2304,6 +2329,9 @@ func TestRunDelta_WaitErrNoStderr(t *testing.T) {
 
 // runDelta: stdin pipe write error from writeInput.
 func TestRunDelta_StdinWriteError(t *testing.T) {
+	if !deltaAvailable() {
+		t.Skip("delta not installed, skipping runDelta test")
+	}
 	// delta is available in the test environment; provide bad input writer.
 	_, err := runDelta(context.Background(), []string{}, func(w io.Writer) error {
 		return fmt.Errorf("stdin write failed")
@@ -2315,6 +2343,9 @@ func TestRunDelta_StdinWriteError(t *testing.T) {
 
 // runDelta: successful invocation produces output.
 func TestRunDelta_Success(t *testing.T) {
+	if !deltaAvailable() {
+		t.Skip("delta not installed, skipping runDelta test")
+	}
 	out, err := runDelta(context.Background(), []string{"--paging=never"}, func(w io.Writer) error {
 		_, err := io.WriteString(w, "diff --git a/f b/f\nnew file mode 100644\n")
 		return err
@@ -2333,13 +2364,18 @@ func TestRunDelta_Success(t *testing.T) {
 // error (broken pipe). The function should return the stdinErr if waitErr is nil,
 // or the waitErr otherwise.
 func TestRunDelta_WriteInputError(t *testing.T) {
+	if !deltaAvailable() {
+		t.Skip("delta not installed, skipping runDelta test")
+	}
 	out, err := runDelta(context.Background(), []string{"--paging=never"}, func(w io.Writer) error {
 		return fmt.Errorf("stdin write failed")
 	})
 	if err == nil {
 		t.Fatal("expected error when writeInput fails")
 	}
-	_ = out
+	if len(out) != 0 {
+		t.Fatalf("expected empty output when writeInput fails, got %d bytes", len(out))
+	}
 }
 
 // applyHighlight: selection entirely within a visible viewport with

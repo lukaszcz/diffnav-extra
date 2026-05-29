@@ -2226,7 +2226,7 @@ func TestMoveToFileNoMovement(t *testing.T) {
 		m.fileTree.Down()
 		node := m.fileTree.GetCurrNode()
 		if node == nil {
-			t.Skip("no file node found")
+			t.Fatal("no file node found; test fixture is broken")
 		}
 	}
 
@@ -2242,7 +2242,11 @@ func TestMoveToFileNoMovement(t *testing.T) {
 	m, _ = m.moveToFile(-1)
 	afterPath := m.fileTree.CurrNodePath()
 	if beforePath != afterPath {
-		t.Errorf("expected path to stay at %q after moveToFile(-1) at first file, got %q", beforePath, afterPath)
+		t.Errorf(
+			"expected path to stay at %q after moveToFile(-1) at first file, got %q",
+			beforePath,
+			afterPath,
+		)
 	}
 }
 
@@ -2330,11 +2334,11 @@ func TestSetNodeDiffFileNode(t *testing.T) {
 		node = m.fileTree.GetCurrNode()
 	}
 	if node == nil {
-		t.Skip("no file node found in tree")
+		t.Fatal("no file node found in tree; test fixture is broken")
 	}
 	fn, ok := node.GivenValue().(*filenode.FileNode)
 	if !ok {
-		t.Skip("could not find a file node")
+		t.Fatal("could not find a file node; test fixture is broken")
 	}
 
 	result, cmd := m.setNodeDiff(node)
@@ -2347,7 +2351,11 @@ func TestSetNodeDiffFileNode(t *testing.T) {
 	}
 	expectedPath := filenode.GetFileName(fn.File)
 	if result.diffViewer.CurrentFilePath() != expectedPath {
-		t.Errorf("expected diffViewer file path=%q, got %q", expectedPath, result.diffViewer.CurrentFilePath())
+		t.Errorf(
+			"expected diffViewer file path=%q, got %q",
+			expectedPath,
+			result.diffViewer.CurrentFilePath(),
+		)
 	}
 	if result.diffViewer.HasDir() {
 		t.Error("expected diffViewer to not have dir when a file is displayed")
@@ -2377,7 +2385,7 @@ func TestSetNodeDiffDirNode(t *testing.T) {
 		m.fileTree.Down()
 		node = m.fileTree.GetCurrNode()
 	}
-	t.Skip("no directory or string node found in tree")
+	t.Fatal("no directory or string node found in tree; test fixture is broken")
 }
 
 // ---------------------------------------------------------------------------
@@ -3140,7 +3148,15 @@ func TestHandleSearchBoxClickWhenNotSearching(t *testing.T) {
 	if !m2.searching {
 		t.Fatal("expected searching to be true after clicking search box")
 	}
-	_ = cmd
+	// handleSearchBoxClick returns a batch command containing focus and resize cmds.
+	// The cmd can be nil when the search input or diffViewer produces no cmd,
+	// so we verify the command is either a batch or nil.
+	if cmd != nil {
+		// When non-nil, it should be a batch of focus + diffViewer resize.
+		if _, ok := cmd().(tea.BatchMsg); !ok {
+			t.Errorf("expected tea.BatchMsg cmd from handleSearchBoxClick, got %T", cmd())
+		}
+	}
 }
 
 func TestHandleSearchBoxClickWhenAlreadySearching(t *testing.T) {
@@ -3173,13 +3189,20 @@ func TestHandleScrollInDiffViewer(t *testing.T) {
 	// Scroll down in the diff viewer zone using handleMouse with a wheel button.
 	// Note: handleMouse routes to handleScroll for wheel events.
 	z := zone.Get(zoneDiffViewer)
-	if !z.IsZero() {
-		_ = updateMainModel(t, m, tea.MouseMotionMsg(tea.Mouse{
-			X:      z.StartX + 5,
-			Y:      z.StartY + 5,
-			Button: tea.MouseWheelDown,
-		}))
+	if z.IsZero() {
+		t.Fatal("zoneDiffViewer not registered after View(); scroll test cannot execute")
 	}
+	// The scroll event should be processed without panicking.
+	// YOffset may or may not change depending on whether there is enough
+	// content to scroll and where the viewport is positioned, so we just
+	// verify the model remains valid.
+	m = updateMainModel(t, m, tea.MouseMotionMsg(tea.Mouse{
+		X:      z.StartX + 5,
+		Y:      z.StartY + 5,
+		Button: tea.MouseWheelDown,
+	}))
+	// Verify the update produced a valid model (did not panic).
+	_ = m.View().Content
 }
 
 func TestHandleScrollInFileTreeZoneLegacy(t *testing.T) {
@@ -3190,30 +3213,39 @@ func TestHandleScrollInFileTreeZoneLegacy(t *testing.T) {
 	_ = m.View().Content
 
 	z := zone.Get(zoneFileTree)
-	if !z.IsZero() {
-		m = updateMainModel(t, m, tea.MouseMotionMsg(tea.Mouse{
-			X:      z.StartX + 2,
-			Y:      z.StartY + 5,
-			Button: tea.MouseWheelUp,
-		}))
+	if z.IsZero() {
+		t.Fatal("zoneFileTree not registered after View(); scroll test cannot execute")
 	}
+	m = updateMainModel(t, m, tea.MouseMotionMsg(tea.Mouse{
+		X:      z.StartX + 2,
+		Y:      z.StartY + 5,
+		Button: tea.MouseWheelUp,
+	}))
 }
 
 func TestHandleScrollInSearchResults(t *testing.T) {
 	m := newTestMainModel(t)
 	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 40})
 	m.searching = true
+	m.search.SetValue("yarn")
+	m.setSearchResults()
+	m.resultsVp.SetWidth(m.config.UI.SearchTreeWidth)
+	m.resultsVp.SetHeight(m.mainContentHeight() - searchHeight)
+	m.resultsVp.SetContent(m.resultsView())
 
 	_ = m.View().Content
 
 	z := zone.Get(zoneSearchResults)
-	if !z.IsZero() {
-		m = updateMainModel(t, m, tea.MouseMotionMsg(tea.Mouse{
-			X:      z.StartX + 2,
-			Y:      z.StartY + 5,
-			Button: tea.MouseWheelDown,
-		}))
+	if z.IsZero() {
+		t.Fatal("zoneSearchResults not registered after View(); scroll test cannot execute")
 	}
+	// The scroll event should be processed without panicking.
+	m = updateMainModel(t, m, tea.MouseMotionMsg(tea.Mouse{
+		X:      z.StartX + 2,
+		Y:      z.StartY + 5,
+		Button: tea.MouseWheelDown,
+	}))
+	_ = m.View().Content
 }
 
 // ---------------------------------------------------------------------------
@@ -4289,7 +4321,11 @@ func TestApplyAutoDetectedBackgroundReturnsDiffViewerCmd(t *testing.T) {
 
 	// Ensure the diffViewer is in auto theme mode so SetDarkBackground returns a cmd
 	cmd := m.applyAutoDetectedBackground(true)
-	// If the diffViewer returns a non-nil cmd from SetDarkBackground, it will bubble up
+	// verify that isDarkBackground was set, regardless of whether cmd is nil.
+	// The cmd depends on whether the diffViewer has a file to render.
+	if m.isDarkBackground == nil || !*m.isDarkBackground {
+		t.Fatal("expected isDarkBackground to be set to true")
+	}
 	_ = cmd
 }
 
@@ -4707,7 +4743,7 @@ func TestResultsViewWithFileInCurrentDirectory(t *testing.T) {
 	}
 
 	if len(topFiles) == 0 {
-		t.Skip("no top-level files in test fixture")
+		t.Fatal("no top-level files in test fixture; test fixture is broken")
 	}
 
 	// Set search to match only top-level files
@@ -5036,7 +5072,7 @@ func TestHandleFileTreeClickDirectoryIconHit(t *testing.T) {
 	m.fileTree.SetCursorByPath("graphql-server/tests")
 	node := m.fileTree.GetCurrNode()
 	if node == nil {
-		t.Skip("no directory node found")
+		t.Fatal("no directory node found; test fixture is broken")
 	}
 
 	_ = m.View().Content
@@ -5057,7 +5093,7 @@ func TestHandleFileTreeClickDirectoryIconHit(t *testing.T) {
 		}
 	}
 	if iconX < 0 {
-		t.Skip("could not find directory icon hit column")
+		t.Fatal("could not find directory icon hit column; test fixture is broken")
 	}
 
 	updated, _ := m.handleFileTreeClick(tea.MouseClickMsg(tea.Mouse{
@@ -5976,6 +6012,10 @@ func TestUpdateBackgroundDetectionWithDiffViewerCmd(t *testing.T) {
 	if result.isDarkBackground == nil {
 		t.Fatal("expected isDarkBackground to be set")
 	}
+	// The diffViewer's SetDarkBackground may return a cmd that should be in cmds.
+	// Verify that cmds is either nil (no diffViewer cmd) or non-nil.
+	// The key behavioral assertion is that the model's isDarkBackground was set
+	// correctly, which was already checked above.
 	_ = cmds
 }
 
@@ -6060,7 +6100,11 @@ func TestResolveBranchEmptyHashReturnsEmpty(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			result := resolveBranch(tc.preamble)
 			if result != "" {
-				t.Fatalf("expected empty branch for commit with empty hash %q, got %q", tc.preamble, result)
+				t.Fatalf(
+					"expected empty branch for commit with empty hash %q, got %q",
+					tc.preamble,
+					result,
+				)
 			}
 		})
 	}
@@ -6499,7 +6543,11 @@ func TestHandleSearchResultClickIndexOutOfRangeCoverage(t *testing.T) {
 	// Should return early without selecting any file
 	// The resultsCursor should remain unchanged.
 	if result.resultsCursor != m.resultsCursor {
-		t.Errorf("expected resultsCursor unchanged (%d), got %d", m.resultsCursor, result.resultsCursor)
+		t.Errorf(
+			"expected resultsCursor unchanged (%d), got %d",
+			m.resultsCursor,
+			result.resultsCursor,
+		)
 	}
 }
 
@@ -6802,7 +6850,14 @@ func TestHandleDiffSelectionMotionOutOfBoundsHorizontal(t *testing.T) {
 	// Mouse to the left of the zone.
 	msg := tea.MouseMotionMsg(tea.Mouse{X: 0, Y: z.StartY + 5})
 	result, cmd := m.handleDiffSelectionMotion(msg)
-	_ = result
+	resultModel, ok := result.(mainModel)
+	if !ok {
+		t.Fatalf("unexpected model type %T", result)
+	}
+	// Selection should still be active even when mouse is out of bounds.
+	if !resultModel.diffViewer.IsSelecting() {
+		t.Fatal("expected selection to remain active after out-of-bounds horizontal motion")
+	}
 	_ = cmd
 }
 
@@ -6820,8 +6875,15 @@ func TestHandleDiffSelectionMotionAbovePane(t *testing.T) {
 	// Mouse above the dir header.
 	msg := tea.MouseMotionMsg(tea.Mouse{X: z.StartX + 5, Y: z.StartY + 1})
 	result, cmd := m.handleDiffSelectionMotion(msg)
+	resultModel, ok := result.(mainModel)
+	if !ok {
+		t.Fatalf("unexpected model type %T", result)
+	}
+	// Selection should still be active even when mouse is above the pane.
+	if !resultModel.diffViewer.IsSelecting() {
+		t.Fatal("expected selection to remain active after motion above pane")
+	}
 	_ = cmd
-	_ = result
 }
 
 func TestHandleDiffSelectionMotionBelowPane(t *testing.T) {
@@ -6841,8 +6903,15 @@ func TestHandleDiffSelectionMotionBelowPane(t *testing.T) {
 		Y: z.StartY + diffviewer.DirHeaderHeight + m.diffViewer.Height() + 5,
 	})
 	result, cmd := m.handleDiffSelectionMotion(msg)
+	resultModel, ok := result.(mainModel)
+	if !ok {
+		t.Fatalf("unexpected model type %T", result)
+	}
+	// Selection should still be active even when mouse is below the pane.
+	if !resultModel.diffViewer.IsSelecting() {
+		t.Fatal("expected selection to remain active after motion below pane")
+	}
 	_ = cmd
-	_ = result
 }
 
 func TestHandleDiffSelectionMotionClampedX(t *testing.T) {
@@ -6868,6 +6937,13 @@ func TestHandleDiffSelectionMotionClampedX(t *testing.T) {
 		Y: z.StartY + diffviewer.DirHeaderHeight + 5,
 	})
 	result, cmd := m.handleDiffSelectionMotion(msg)
+	resultModel, ok := result.(mainModel)
+	if !ok {
+		t.Fatalf("unexpected model type %T", result)
+	}
+	// Selection should still be active with clamped X coordinate.
+	if !resultModel.diffViewer.IsSelecting() {
+		t.Fatal("expected selection to remain active after clamped X motion")
+	}
 	_ = cmd
-	_ = result
 }

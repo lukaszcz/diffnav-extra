@@ -158,8 +158,8 @@ func TestGetIcon_NerdStatus_New(t *testing.T) {
 	cfg.UI.Icons = IconsNerdStatus
 	fn := makeFileNode(newFile(withIsNew), cfg)
 	icon := fn.getIcon()
-	if icon == "" {
-		t.Error("getIcon() nerd-fonts-status new file returned empty")
+	if icon != "\uf457" {
+		t.Errorf("getIcon() nerd-fonts-status new = %q, want %q", icon, "\uf457")
 	}
 }
 
@@ -168,8 +168,8 @@ func TestGetIcon_NerdStatus_Deleted(t *testing.T) {
 	cfg.UI.Icons = IconsNerdStatus
 	fn := makeFileNode(newFile(withIsDelete), cfg)
 	icon := fn.getIcon()
-	if icon == "" {
-		t.Error("getIcon() nerd-fonts-status deleted file returned empty")
+	if icon != "\ueadf" {
+		t.Errorf("getIcon() nerd-fonts-status deleted = %q, want %q", icon, "\ueadf")
 	}
 }
 
@@ -178,8 +178,8 @@ func TestGetIcon_NerdStatus_Modified(t *testing.T) {
 	cfg.UI.Icons = IconsNerdStatus
 	fn := makeFileNode(newFile(), cfg)
 	icon := fn.getIcon()
-	if icon == "" {
-		t.Error("getIcon() nerd-fonts-status modified file returned empty")
+	if icon != "\uf459" {
+		t.Errorf("getIcon() nerd-fonts-status modified = %q, want %q", icon, "\uf459")
 	}
 }
 
@@ -190,8 +190,8 @@ func TestGetIcon_NerdSimple(t *testing.T) {
 	cfg.UI.Icons = IconsNerdSimple
 	fn := makeFileNode(newFile(withIsNew), cfg)
 	icon := fn.getIcon()
-	if icon == "" {
-		t.Error("getIcon() nerd-fonts-simple returned empty")
+	if icon != "\uf4a5" {
+		t.Errorf("getIcon() nerd-fonts-simple = %q, want %q", icon, "\uf4a5")
 	}
 }
 
@@ -300,24 +300,24 @@ func TestGetIcon_UnknownStyle_Modified(t *testing.T) {
 func TestGetStatusIcon_New(t *testing.T) {
 	fn := makeFileNode(newFile(withIsNew), defaultCfg())
 	icon := fn.getStatusIcon()
-	if icon == "" {
-		t.Error("getStatusIcon() for new file returned empty")
+	if icon != "\uf457" {
+		t.Errorf("getStatusIcon() new = %q, want %q", icon, "\uf457")
 	}
 }
 
 func TestGetStatusIcon_Deleted(t *testing.T) {
 	fn := makeFileNode(newFile(withIsDelete), defaultCfg())
 	icon := fn.getStatusIcon()
-	if icon == "" {
-		t.Error("getStatusIcon() for deleted file returned empty")
+	if icon != "\ueadf" {
+		t.Errorf("getStatusIcon() deleted = %q, want %q", icon, "\ueadf")
 	}
 }
 
 func TestGetStatusIcon_Modified(t *testing.T) {
 	fn := makeFileNode(newFile(), defaultCfg())
 	icon := fn.getStatusIcon()
-	if icon == "" {
-		t.Error("getStatusIcon() for modified file returned empty")
+	if icon != "\uf459" {
+		t.Errorf("getStatusIcon() modified = %q, want %q", icon, "\uf459")
 	}
 }
 
@@ -330,6 +330,20 @@ func TestGetStatusIcon_SameAsStatusGetIcon(t *testing.T) {
 	if fn.getStatusIcon() != fn.getIcon() {
 		t.Error(
 			"getStatusIcon() and getIcon() should return the same glyph for nerd-fonts-status new files",
+		)
+	}
+
+	fnDel := makeFileNode(newFile(withIsDelete), cfg)
+	if fnDel.getStatusIcon() != fnDel.getIcon() {
+		t.Error(
+			"getStatusIcon() and getIcon() should return the same glyph for nerd-fonts-status deleted files",
+		)
+	}
+
+	fnMod := makeFileNode(newFile(), cfg)
+	if fnMod.getStatusIcon() != fnMod.getIcon() {
+		t.Error(
+			"getStatusIcon() and getIcon() should return the same glyph for nerd-fonts-status modified files",
 		)
 	}
 }
