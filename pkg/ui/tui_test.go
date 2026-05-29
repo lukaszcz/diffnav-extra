@@ -7,10 +7,12 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
@@ -1491,13 +1493,12 @@ func TestResolveBranchWithMultipleRefs(t *testing.T) {
 
 func TestResolveBranchNoDecoration(t *testing.T) {
 	// Without decoration, resolveBranch falls through to git CLI.
-	// Using a non-existent hash, git should return empty.
-	preamble := "commit abc123"
+	// Using a non-existent full hash (all zeros), git should return empty.
+	preamble := "commit 0000000000000000000000000000000000000000"
 	result := resolveBranch(preamble)
-	// abc123 is not a valid full hash, so git CLI likely errors and returns "".
-	// If it does return something, it must be a valid branch name (no spaces or newlines).
-	if strings.Contains(result, " ") || strings.Contains(result, "\n") {
-		t.Fatalf("expected valid branch name or empty, got %q", result)
+	// No branch points at this hash, so the result must be empty.
+	if result != "" {
+		t.Fatalf("expected empty branch for non-existent hash, got %q", result)
 	}
 }
 
@@ -1509,13 +1510,12 @@ func TestResolveBranchEmptyPreamble(t *testing.T) {
 }
 
 func TestResolveBranchNoHeadArrow(t *testing.T) {
-	preamble := "commit abc123 (tag: v1.0, origin/main)"
-	// No "HEAD -> " prefix, so it falls through to git CLI
+	preamble := "commit 0000000000000000000000000000000000000000 (tag: v1.0, origin/main)"
+	// No "HEAD -> " prefix, so it falls through to git CLI with the hash.
+	// No branch points at this hash, so the result must be empty.
 	result := resolveBranch(preamble)
-	// abc123 is not a valid full hash, so git CLI likely errors and returns "".
-	// If it does return something, it must be a valid branch name.
-	if strings.Contains(result, " ") || strings.Contains(result, "\n") {
-		t.Fatalf("expected valid branch name or empty, got %q", result)
+	if result != "" {
+		t.Fatalf("expected empty branch for non-existent hash with tags, got %q", result)
 	}
 }
 
@@ -3220,19 +3220,26 @@ func TestHandleScrollInDiffViewer(t *testing.T) {
 	// Need to call View() first to register zones
 	_ = m.View().Content
 
-	// Scroll down in the diff viewer zone using handleMouse with a wheel button.
-	// Note: handleMouse routes to handleScroll for wheel events.
 	z := waitForZone(t, zoneDiffViewer)
-	// The scroll event should be processed without panicking.
-	// YOffset may or may not change depending on whether there is enough
-	// content to scroll and where the viewport is positioned, so we just
-	// verify the model remains valid.
+	yOffsetBefore := m.diffViewer.YOffset()
+
 	m = updateMainModel(t, m, tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 5,
 		Y:      z.StartY + 5,
 		Button: tea.MouseWheelDown,
 	}))
-	// Verify the update produced a valid model (did not panic).
+
+	// If the diffViewer has enough content to scroll, YOffset should increase.
+	// If content fits in the viewport, it stays at 0. Either way, the model
+	// must remain valid and the scroll was handled.
+	yOffsetAfter := m.diffViewer.YOffset()
+	if m.diffViewer.TotalLineCount() > 0 && yOffsetAfter < yOffsetBefore {
+		t.Fatalf(
+			"expected YOffset to stay same or increase, got before=%d after=%d",
+			yOffsetBefore,
+			yOffsetAfter,
+		)
+	}
 	_ = m.View().Content
 }
 
@@ -3244,11 +3251,23 @@ func TestHandleScrollInFileTreeZoneLegacy(t *testing.T) {
 	_ = m.View().Content
 
 	z := waitForZone(t, zoneFileTree)
-	m = updateMainModel(t, m, tea.MouseMotionMsg(tea.Mouse{
+	// ScrollUp on the file tree should not panic and should produce a valid model.
+	updated, cmd := m.Update(tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 2,
 		Y:      z.StartY + 5,
 		Button: tea.MouseWheelUp,
 	}))
+	result, ok := updated.(mainModel)
+	if !ok {
+		t.Fatalf("unexpected model type %T", updated)
+	}
+	// After scrolling up in the file tree, the fileTree's viewport offset
+	// should remain at or above 0 since we scrolled up from the top.
+	offset := result.fileTree.ViewportYOffset()
+	if offset < 0 {
+		t.Fatalf("expected non-negative file tree viewport offset, got %d", offset)
+	}
+	_ = cmd
 }
 
 func TestHandleScrollInSearchResults(t *testing.T) {
@@ -3264,12 +3283,24 @@ func TestHandleScrollInSearchResults(t *testing.T) {
 	_ = m.View().Content
 
 	z := waitForZone(t, zoneSearchResults)
-	// The scroll event should be processed without panicking.
+	yOffsetBefore := m.resultsVp.YOffset()
+
 	m = updateMainModel(t, m, tea.MouseMotionMsg(tea.Mouse{
 		X:      z.StartX + 2,
 		Y:      z.StartY + 5,
 		Button: tea.MouseWheelDown,
 	}))
+
+	// If there are enough search results to scroll, YOffset should increase;
+	// otherwise it stays at 0. Either way the offset must not decrease.
+	yOffsetAfter := m.resultsVp.YOffset()
+	if yOffsetAfter < yOffsetBefore {
+		t.Fatalf(
+			"expected YOffset to stay same or increase after scroll down, got before=%d after=%d",
+			yOffsetBefore,
+			yOffsetAfter,
+		)
+	}
 	_ = m.View().Content
 }
 
@@ -3823,17 +3854,13 @@ func TestInitWithWatchEnabled(t *testing.T) {
 
 func TestFetchFileTreeReturnsErrMsgOnBadInput(t *testing.T) {
 	m := newTestMainModel(t)
-	m.input = "not valid git diff content @@@"
+	// Use a diff header with an invalid index line, which reliably triggers
+	// gitdiff.Parse to return an error.
+	m.input = "diff --git a/foo b/bar\nindex broken\n"
 
 	msg := m.fetchFileTree()
-	// gitdiff.Parse is fairly lenient, so let's just call it and check the type
-	switch msg.(type) {
-	case fileTreeMsg:
-		// gitdiff.Parse may still succeed with malformed input
-	case common.ErrMsg:
-		// This is the expected path for truly invalid input
-	default:
-		t.Fatalf("expected fileTreeMsg or ErrMsg, got %T", msg)
+	if _, ok := msg.(common.ErrMsg); !ok {
+		t.Fatalf("expected common.ErrMsg for invalid diff input, got %T", msg)
 	}
 }
 
@@ -4340,11 +4367,12 @@ func TestApplyAutoDetectedBackgroundReturnsDiffViewerCmd(t *testing.T) {
 
 	// Ensure the diffViewer is in auto theme mode so SetDarkBackground returns a cmd
 	cmd := m.applyAutoDetectedBackground(true)
-	// verify that isDarkBackground was set, regardless of whether cmd is nil.
-	// The cmd depends on whether the diffViewer has a file to render.
 	if m.isDarkBackground == nil || !*m.isDarkBackground {
 		t.Fatal("expected isDarkBackground to be set to true")
 	}
+	// applyAutoDetectedBackground returns the cmd from diffViewer.SetDarkBackground.
+	// Regardless of content, isDarkBackground must have been set on the fileTree too.
+	// The cmd itself may be nil or non-nil depending on diffViewer state.
 	_ = cmd
 }
 
@@ -4635,20 +4663,20 @@ func TestResolveBranchCommitNoRefsWithGitCli(t *testing.T) {
 	// "commit abc" - no decoration, falls through to git CLI --points-at lookup.
 	// Use a all-zero hash that has no branch pointing at it.
 	result := resolveBranch("commit 0000000000000000000000000000000000000000")
-	// The hash has no branch pointing at it; result should be empty.
-	// If non-empty, it must be a valid branch name (no spaces or newlines).
-	if strings.Contains(result, " ") || strings.Contains(result, "\n") {
-		t.Fatalf("expected valid branch name or empty, got %q", result)
+	// The hash has no branch pointing at it; result must be empty.
+	if result != "" {
+		t.Fatalf("expected empty branch for all-zero hash, got %q", result)
 	}
 }
 
 func TestResolveBranchCommitWithRefsButNoHeadArrow(t *testing.T) {
-	// "commit abc (tag: v1.0, origin/main)" - no HEAD ->, falls through to git CLI
-	result := resolveBranch("commit abc123 (tag: v1.0, origin/main)")
-	// Falls through to --points-at with hash "abc123"
-	// May or may not find a branch. Must return a valid branch name or empty.
-	if strings.Contains(result, " ") || strings.Contains(result, "\n") {
-		t.Fatalf("expected valid branch name or empty, got %q", result)
+	// "commit 0000... (tag: v1.0, origin/main)" - no HEAD ->, falls through to git CLI
+	// No branch points at this hash, so the result must be empty.
+	result := resolveBranch(
+		"commit 0000000000000000000000000000000000000000 (tag: v1.0, origin/main)",
+	)
+	if result != "" {
+		t.Fatalf("expected empty branch for non-existent hash with tags, got %q", result)
 	}
 }
 
@@ -5946,8 +5974,13 @@ func TestInitAutoThemeSchedulesBackgroundDetection(t *testing.T) {
 
 func TestUpdateBackgroundDetectionWithDiffViewerCmd(t *testing.T) {
 	m := newTestMainModel(t)
+	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 160, Height: 40})
 	m.themeOverride = nil
 	m.isDarkBackground = nil
+	// Load a file patch into the diffViewer so diff() returns a non-nil cmd.
+	if len(m.files) > 0 {
+		m.diffViewer, _ = m.diffViewer.SetFilePatch(m.files[0])
+	}
 
 	// When background detection fires and the diffViewer returns a cmd from
 	// SetDarkBackground, that cmd should be appended to the cmds list.
@@ -5962,11 +5995,12 @@ func TestUpdateBackgroundDetectionWithDiffViewerCmd(t *testing.T) {
 	if result.isDarkBackground == nil {
 		t.Fatal("expected isDarkBackground to be set")
 	}
-	// The diffViewer's SetDarkBackground may return a cmd that should be in cmds.
-	// Verify that cmds is either nil (no diffViewer cmd) or non-nil.
-	// The key behavioral assertion is that the model's isDarkBackground was set
-	// correctly, which was already checked above.
-	_ = cmds
+	// With diffViewer content loaded, applyAutoDetectedBackground should
+	// return a non-nil cmd from diffViewer.SetDarkBackground, and Update
+	// should include it in the returned batch.
+	if cmds == nil {
+		t.Fatal("expected non-nil cmds from BackgroundColorMsg update with diffViewer content")
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -6024,20 +6058,13 @@ func TestUpdateOpenInEditorWithEditorSet(t *testing.T) {
 func TestFetchFileTreeWithInvalidInput(t *testing.T) {
 	m := newTestMainModel(t)
 
-	// gitdiff.Parse is very lenient; let's try with binary-like data that contains
-	// NUL bytes, which should cause a proper parse error.
-	m.input = "\x00\x00\x00invalid binary data\x00"
+	// Use a diff header with an invalid index line to reliably trigger the
+	// gitdiff.Parse error path (lines 707-709).
+	m.input = "diff --git a/foo b/bar\nindex broken\n"
 
 	msg := m.fetchFileTree()
-	switch msg := msg.(type) {
-	case common.ErrMsg:
-		// Successfully triggered the error path
-		_ = msg
-	case fileTreeMsg:
-		// gitdiff.Parse might still succeed with some input
-		_ = msg
-	default:
-		t.Fatalf("expected fileTreeMsg or ErrMsg, got %T", msg)
+	if _, ok := msg.(common.ErrMsg); !ok {
+		t.Fatalf("expected common.ErrMsg for invalid diff input, got %T", msg)
 	}
 }
 
@@ -6128,13 +6155,47 @@ func TestOpenInEditorPathsFileWithRepoRoot(t *testing.T) {
 	m := newTestMainModel(t)
 	t.Setenv("EDITOR", "echo")
 	m.repoRoot = "/tmp/testrepo"
-	m.fileTree.SetCursorByPath("some/file.txt")
+	// Use a file path that actually exists in the test model's file tree.
+	relpath := m.fileTree.CurrNodePath()
+	if relpath == "" && len(m.files) > 0 {
+		relpath = filenode.GetFileName(m.files[0])
+	}
+	m.fileTree.SetCursorByPath(relpath)
 
 	cmd := m.openInEditor()
 	if cmd == nil {
 		t.Fatal("expected non-nil cmd when EDITOR is set")
 	}
-	// The command should use filepath.Join(repoRoot, relpath)
+	// Verify the command was constructed with the correct full path.
+	// Call the cmd to get the tea.Msg, then use reflect to extract the
+	// underlying *exec.Cmd from the unexported tea.execMsg wrapper.
+	msg := cmd()
+	v := reflect.ValueOf(msg)
+	if v.Kind() != reflect.Struct || v.NumField() < 1 {
+		t.Fatalf(
+			"expected struct with at least 1 field, got %v NumField=%d",
+			v.Kind(),
+			v.NumField(),
+		)
+	}
+	cmdInterface := v.Field(0) // tea.ExecCommand interface
+	if cmdInterface.Kind() != reflect.Interface {
+		t.Fatalf("expected interface field, got %v", cmdInterface.Kind())
+	}
+	inner := cmdInterface.Elem()  // *tea.osExecCommand
+	innerVal := inner.Elem()      // tea.osExecCommand (struct)
+	embedPtr := innerVal.Field(0) // *exec.Cmd (embedded)
+	if embedPtr.Kind() != reflect.Pointer {
+		t.Fatalf("expected pointer field, got %v", embedPtr.Kind())
+	}
+	realCmd := (*exec.Cmd)(unsafe.Pointer(embedPtr.Pointer()))
+	expectedPath := filepath.Join("/tmp/testrepo", relpath)
+	if len(realCmd.Args) < 2 {
+		t.Fatalf("expected at least 2 args, got %v", realCmd.Args)
+	}
+	if realCmd.Args[1] != expectedPath {
+		t.Fatalf("expected cmd arg[1] to be %q, got %q", expectedPath, realCmd.Args[1])
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -6382,8 +6443,13 @@ func TestUpdateQuitKeyReturnsQuitCmd(t *testing.T) {
 
 func TestUpdateBackgroundDetectionAddsDiffViewerCmd(t *testing.T) {
 	m := newTestMainModel(t)
+	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 160, Height: 40})
 	m.themeOverride = nil
 	m.isDarkBackground = nil
+	// Load a file patch into the diffViewer so diff() returns a non-nil cmd.
+	if len(m.files) > 0 {
+		m.diffViewer, _ = m.diffViewer.SetFilePatch(m.files[0])
+	}
 
 	// When we get a BackgroundColorMsg and the diffViewer returns a non-nil
 	// cmd from SetDarkBackground, the dfCmd should be appended.
@@ -6401,7 +6467,11 @@ func TestUpdateBackgroundDetectionAddsDiffViewerCmd(t *testing.T) {
 	if *result.isDarkBackground {
 		t.Error("expected isDarkBackground=false for white background")
 	}
-	_ = cmds
+	// With diffViewer content loaded, applyAutoDetectedBackground should
+	// return a non-nil cmd and Update should include it in the batch.
+	if cmds == nil {
+		t.Fatal("expected non-nil cmds from BackgroundColorMsg update with diffViewer content")
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -6440,11 +6510,20 @@ func TestOpenInEditorClosureBody(t *testing.T) {
 		t.Fatal("expected non-nil cmd when EDITOR is set")
 	}
 
-	// Execute the cmd to trigger the closure body.
-	// tea.ExecProcess returns a Cmd that wraps the exec, and the callback
-	// func(err error) tea.Msg { return nil } at line 1162-1164 needs to execute.
-	// We can't easily execute tea.ExecProcess in unit tests, but we can
-	// verify the cmd is non-nil and let the tea runtime handle it.
+	// Call the cmd to trigger the closure body and verify it returns a message.
+	msg := cmd()
+	if msg == nil {
+		t.Fatal("expected non-nil msg from cmd execution")
+	}
+
+	// Test the editorDone callback directly (lines 1162-1164).
+	// editorDone should always return nil regardless of the error input.
+	if result := editorDone(nil); result != nil {
+		t.Fatalf("expected editorDone(nil) to return nil, got %v", result)
+	}
+	if result := editorDone(fmt.Errorf("some error")); result != nil {
+		t.Fatalf("expected editorDone(err) to return nil, got %v", result)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -6713,11 +6792,12 @@ func TestUpdateBackgroundDetectionDiffViewerReturnsCmd(t *testing.T) {
 	if result.isDarkBackground == nil {
 		t.Fatal("expected isDarkBackground to be set")
 	}
-
-	// Execute any commands returned to trigger diffViewer diffs
-	if cmds != nil {
-		_ = cmds()
+	// BackgroundColorMsg should produce a non-nil batch of commands because
+	// applyAutoDetectedBackground returns the diffViewer cmd.
+	if cmds == nil {
+		t.Fatal("expected non-nil cmds from BackgroundColorMsg with diffViewer content")
 	}
+	_ = cmds()
 }
 
 func TestResolveBranchCommitWithOnlySpaces(t *testing.T) {
