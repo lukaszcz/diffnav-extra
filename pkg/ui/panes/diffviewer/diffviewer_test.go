@@ -2212,56 +2212,57 @@ func TestEndSelection_NotActive(t *testing.T) {
 }
 
 // runDelta: context canceled after process starts covers the ctxErr path.
-// We use an already-canceled context so the ctxErr path is exercised deterministically.
+// We cancel the context while the process is running so Wait() returns a
+// context error, exercising the ctxErr branch.
 func TestRunDelta_ContextCanceledMidRun(t *testing.T) {
-	if !deltaAvailable() {
-		t.Skip("delta not installed, skipping runDelta test")
+	origNewCmd := newDeltaCmd
+	defer func() { newDeltaCmd = origNewCmd }()
+
+	newDeltaCmd = func(ctx context.Context, args []string) *exec.Cmd {
+		// Use a long-running command that will be killed by context cancellation.
+		return exec.CommandContext(ctx, "sleep", "10")
 	}
+
 	ctx, cancel := context.WithCancel(context.Background())
-	// Cancel immediately so the context is already expired when runDelta checks.
-	cancel()
-	_, err := runDelta(ctx, []string{"--paging=never"}, func(w io.Writer) error {
-		for i := 0; i < 10000; i++ {
-			io.WriteString(
-				w,
-				"diff --git a/file b/file\nnew file mode 100644\n--- /dev/null\n+++ b/file\n@@ -0,0 +1,1 @@\n+hello\n",
-			)
-		}
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+	_, err := runDelta(ctx, []string{}, func(w io.Writer) error {
+		time.Sleep(200 * time.Millisecond)
 		return nil
 	})
 	if err == nil {
-		t.Fatal("expected error when context is already canceled")
+		t.Fatal("expected error when context is canceled mid-run")
 	}
 	if ctx.Err() == nil {
 		t.Fatal("expected context to be canceled")
 	}
 }
 
-// deltaAvailable checks if the delta binary is installed.
-func deltaAvailable() bool {
-	_, err := exec.LookPath("delta")
-	return err == nil
-}
-
-// runDelta: bad args cause delta to exit with an error, covering the
-// waitErr != nil and stderr branches.
+// runDelta: bad args cause the process to exit with an error and stderr,
+// covering the waitErr != nil and stderr branches.
 func TestRunDelta_BadArgsError(t *testing.T) {
-	if !deltaAvailable() {
-		t.Skip("delta not installed, skipping runDelta test")
+	origNewCmd := newDeltaCmd
+	defer func() { newDeltaCmd = origNewCmd }()
+
+	newDeltaCmd = func(ctx context.Context, args []string) *exec.Cmd {
+		return exec.CommandContext(ctx, "sh", "-c", "echo 'error: invalid flag' >&2; exit 1")
 	}
 	_, err := runDelta(
 		context.Background(),
-		[]string{"--invalid-flag-that-does-not-exist"},
+		[]string{},
 		func(w io.Writer) error {
 			return nil
 		},
 	)
 	if err == nil {
-		t.Fatal("expected error with invalid flag")
+		t.Fatal("expected error with process failure")
+	}
+	if !strings.Contains(err.Error(), "invalid flag") {
+		t.Fatalf("expected stderr message in error, got %v", err)
 	}
 }
-
-
 
 // runDelta: StdinPipe error path — injected via stdinPipeFunc var.
 func TestRunDelta_StdinPipeError(t *testing.T) {
@@ -2335,16 +2336,44 @@ func TestRunDelta_Success(t *testing.T) {
 	}
 }
 
-// runDelta: writeInput returning an error after process start covers the
-// stdin-path error handling. When writeInput fails, the goroutine reports
-// the error, stdin.Close() may also fail, and Wait() may return a non-nil
-// error (broken pipe). The function should return the stdinErr if waitErr is nil,
-// or the waitErr otherwise.
-func TestRunDelta_WriteInputError(t *testing.T) {
-	if !deltaAvailable() {
-		t.Skip("delta not installed, skipping runDelta test")
+// runDelta: writeInput returns an error but the process exits successfully
+// (waitErr == nil). This exercises the stdinErr != nil && waitErr == nil branch
+// that returns stdinErr.
+func TestRunDelta_WriteInputErrorProcessSucceeds(t *testing.T) {
+	// runDelta: writeInput returns an error but the process exits successfully
+	// (waitErr == nil). This exercises the stdinErr != nil && waitErr == nil branch.
+	origNewCmd := newDeltaCmd
+	defer func() { newDeltaCmd = origNewCmd }()
+
+	newDeltaCmd = func(ctx context.Context, args []string) *exec.Cmd {
+		// A command that ignores stdin and exits successfully after a short delay,
+		// ensuring the writeInput goroutine runs before Wait() returns.
+		return exec.CommandContext(ctx, "sleep", "0.5")
 	}
-	out, err := runDelta(context.Background(), []string{"--paging=never"}, func(w io.Writer) error {
+
+	_, err := runDelta(context.Background(), []string{}, func(w io.Writer) error {
+		return fmt.Errorf("stdin write failed")
+	})
+	if err == nil {
+		t.Fatal("expected stdinErr to be returned")
+	}
+	if !strings.Contains(err.Error(), "stdin write failed") {
+		t.Fatalf("expected stdin write error, got %v", err)
+	}
+}
+
+// runDelta: writeInput returning an error when the process also fails covers
+// the waitErr != nil precedence over stdinErr.
+func TestRunDelta_WriteInputError(t *testing.T) {
+	origNewCmd := newDeltaCmd
+	defer func() { newDeltaCmd = origNewCmd }()
+
+	newDeltaCmd = func(ctx context.Context, args []string) *exec.Cmd {
+		// A command that fails with stderr when stdin is incomplete.
+		return exec.CommandContext(ctx, "sh", "-c", "cat; exit 1")
+	}
+
+	out, err := runDelta(context.Background(), []string{}, func(w io.Writer) error {
 		return fmt.Errorf("stdin write failed")
 	})
 	if err == nil {
