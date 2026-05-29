@@ -620,60 +620,6 @@ func TestEndSelectionSBSWithMixedLineLengths(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Defensive guard branches unreachable through the public API
-//
-// These branches exist as safety nets against future changes.
-// They cannot be triggered through View/EndSelection/StartSelection
-// because earlier checks prevent the conditions that would reach them.
-// They are tested directly only to satisfy the 100% coverage policy.
-// ---------------------------------------------------------------------------
-
-func TestClampToLineInvertedRange(t *testing.T) {
-	// clampToLine's a > b guard: when both a and b are clamped to
-	// lineWidth and a ends up > b, the function sets a = b. This
-	// cannot happen through the public API because clampToBand
-	// always resolves a <= b before clampToLine is called.
-	a, b := clampToLine(5, 3, 10)
-	if a != 3 || b != 3 {
-		t.Fatalf("expected (3, 3), got (%d, %d)", a, b)
-	}
-}
-
-func TestClampToLineExceedsWidth(t *testing.T) {
-	// clampToLine's a > lineWidth guard: when a exceeds the line
-	// width (but b is even larger), b is first clamped to lineWidth,
-	// then a is clamped to lineWidth, resulting in a == b == lineWidth.
-	// Through the public API this is unreachable because clampToBand
-	// ensures a <= b before clampToLine is called, and if b > lineWidth
-	// then a >= b after both are clamped, causing the caller to skip
-	// the line.
-	a, b := clampToLine(15, 20, 10)
-	if a != 10 || b != 10 {
-		t.Fatalf("expected (10, 10), got (%d, %d)", a, b)
-	}
-}
-
-func TestJoinWrappedLinesEmptyInput(t *testing.T) {
-	// joinWrappedLines' len(rows)==0 guard: through the public API,
-	// selectedTextInner always produces at least one row because the
-	// selection loop runs at least once.
-	got := joinWrappedLines([]string{})
-	if got != "" {
-		t.Fatalf("expected empty string for empty rows, got %q", got)
-	}
-}
-
-func TestReapplyReverseAfterResetsEmptyString(t *testing.T) {
-	// reapplyReverseAfterResets' s=="" guard: through the public API,
-	// spliceReverse is never called with a zero-width range (a >= b
-	// is checked first), so ansi.Cut always returns non-empty text.
-	got := reapplyReverseAfterResets("")
-	if got != "" {
-		t.Fatalf("expected empty string for empty input, got %q", got)
-	}
-}
-
 // stripANSI removes ANSI escape sequences from s for content-level
 // assertions.
 func stripANSI(s string) string {

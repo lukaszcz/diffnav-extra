@@ -77,18 +77,13 @@ func clampToBand(a, b int, band [2]int) (int, int) {
 	return a, b
 }
 
-// clampToLine clips b to min(b, lineWidth). MUST be applied after
-// clampToBand — protects against drag-right-past-EOL when the selection's
-// end column exceeds the actual rendered line width.
+// clampToLine clips the selection range [a, b) to fit within the line's
+// visual width. MUST be applied after clampToBand, which guarantees
+// a <= b. Only b can exceed lineWidth (when the selection end column
+// extends past the rendered line), so we clamp b and leave a alone.
 func clampToLine(a, b, lineWidth int) (int, int) {
 	if b > lineWidth {
 		b = lineWidth
-	}
-	if a > lineWidth {
-		a = lineWidth
-	}
-	if a > b {
-		a = b
 	}
 	return a, b
 }
@@ -112,9 +107,6 @@ func spliceReverse(line string, a, b, lineWidth int) string {
 // applying to the cells that follow. Non-SGR escapes and SGR sequences that
 // don't reset reverse are left untouched.
 func reapplyReverseAfterResets(s string) string {
-	if s == "" {
-		return s
-	}
 	var b strings.Builder
 	b.Grow(len(s))
 	i := 0
@@ -237,9 +229,6 @@ func wrapLongLines(text string, width int) string {
 //     appending so the join reads as one logical line instead of e.g.
 //     "abc                 …def".
 func joinWrappedLines(rows []string) string {
-	if len(rows) == 0 {
-		return ""
-	}
 	var b strings.Builder
 	continuing := false
 	for i, row := range rows {
