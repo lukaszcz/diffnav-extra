@@ -4309,8 +4309,12 @@ func TestInitWithAutoThemeSchedulesBackgroundDetection(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected Init to return non-nil batch command")
 	}
-	// The batch should include tea.RequestBackgroundColor and themeDetectTimeout
-	// We can validate by running the batch and checking messages.
+	// The batch should include tea.RequestBackgroundColor and themeDetectTimeout.
+	// Run the batch to verify it produces at least one message.
+	msg := cmd()
+	if msg == nil {
+		t.Fatal("expected Init batch command to produce a message")
+	}
 }
 
 func TestInitWithWatchEnabledSchedulesWatchTick(t *testing.T) {
