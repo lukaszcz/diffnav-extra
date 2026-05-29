@@ -5058,23 +5058,17 @@ func TestHandleSearchResultClickIndexOutOfRange(t *testing.T) {
 		Button: tea.MouseLeft,
 	})
 
-	// Compute clickedIndex
-	_, y := waitForZone(t, zoneSearchResults).Pos(mouseMsg)
-	if y < 0 {
-		// Out of zone bounds — handleSearchResultClick returns early via y<0 check
-		return
+	// Regardless of whether the click is outside the zone (y < 0) or maps
+	// to an out-of-range index, handleSearchResultClick should return safely
+	// without panicking.
+	updated, _ := m.handleSearchResultClick(mouseMsg)
+	result, ok := updated.(mainModel)
+	if !ok {
+		t.Fatalf("unexpected model type %T", updated)
 	}
-	clickedIndex := y + m.resultsVp.YOffset()
-	if clickedIndex >= len(m.filtered) {
-		// This should trigger the index-out-of-range check in handleSearchResultClick
-		updated, _ := m.handleSearchResultClick(mouseMsg)
-		result, ok := updated.(mainModel)
-		if !ok {
-			t.Fatalf("unexpected model type %T", updated)
-		}
-		if result.searching {
-			t.Fatal("expected search to remain when click is out of range")
-		}
+	// Search state should remain unchanged since the click was out of range.
+	if !result.searching {
+		t.Fatal("expected search to remain active when click is out of range")
 	}
 }
 
