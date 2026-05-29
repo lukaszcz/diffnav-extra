@@ -3129,7 +3129,25 @@ func TestMessageViewAllMetadata(t *testing.T) {
 	if view == "" {
 		t.Fatal("expected non-empty message view")
 	}
-	// All metadata lines should be rendered
+	// All metadata lines should be rendered in the output
+	if !strings.Contains(view, "commit") {
+		t.Fatal("expected view to contain commit line")
+	}
+	if !strings.Contains(view, "Author:") {
+		t.Fatal("expected view to contain Author metadata")
+	}
+	if !strings.Contains(view, "AuthorDate:") {
+		t.Fatal("expected view to contain AuthorDate metadata")
+	}
+	if !strings.Contains(view, "Commit:") {
+		t.Fatal("expected view to contain Commit metadata")
+	}
+	if !strings.Contains(view, "CommitDate:") {
+		t.Fatal("expected view to contain CommitDate metadata")
+	}
+	if !strings.Contains(view, "Merge:") {
+		t.Fatal("expected view to contain Merge metadata")
+	}
 }
 
 // ---------------------------------------------------------------------------
