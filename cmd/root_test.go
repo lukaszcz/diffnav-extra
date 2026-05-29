@@ -1257,9 +1257,11 @@ func TestDefaultInjectables(t *testing.T) {
 	// stdinStat default: call the original function.
 	info, err := stdinStat()
 	if err != nil {
-		t.Logf("stdin stat: %v", err)
+		// In a test environment without a real stdin pipe, stat may fail — that's acceptable.
+		t.Logf("stdin stat: %v (acceptable in test env)", err)
+	} else if info == nil {
+		t.Error("expected non-nil os.FileInfo from stdinStat when no error")
 	}
-	_ = info // may be nil in test environment
 
 	// stdinReader default: call the original function.
 	// In a test environment with no real stdin pipe, this returns a reader
