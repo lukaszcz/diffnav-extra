@@ -4335,6 +4335,11 @@ func TestInitWithWatchEnabledSchedulesWatchTick(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected Init to return non-nil batch command with watch enabled")
 	}
+	// Batch command should produce at least one message.
+	msg := cmd()
+	if msg == nil {
+		t.Fatal("expected watch-init batch command to produce a message")
+	}
 }
 
 // ---------------------------------------------------------------------------
