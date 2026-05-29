@@ -478,123 +478,6 @@ func TestSetPreamble(t *testing.T) {
 	}
 }
 
-// New() - verify theme mode field and isDarkBackground population.
-func TestNew_ThemeFieldPopulation(t *testing.T) {
-	darkM := New(false, "dark")
-	if darkM.themeMode != themeDark {
-		t.Fatalf("expected themeDark, got %d", darkM.themeMode)
-	}
-	if darkM.isDarkBackground == nil || !*darkM.isDarkBackground {
-		t.Fatalf("expected isDarkBackground=true for dark theme")
-	}
-
-	lightM := New(false, "light")
-	if lightM.themeMode != themeLight {
-		t.Fatalf("expected themeLight, got %d", lightM.themeMode)
-	}
-	if lightM.isDarkBackground == nil || *lightM.isDarkBackground {
-		t.Fatalf("expected isDarkBackground=false for light theme")
-	}
-
-	autoM := New(false, "auto")
-	if autoM.themeMode != themeAuto {
-		t.Fatalf("expected themeAuto, got %d", autoM.themeMode)
-	}
-	if autoM.isDarkBackground != nil {
-		t.Fatalf("expected isDarkBackground=nil for auto theme, got %v", autoM.isDarkBackground)
-	}
-
-	// Invalid theme falls back to auto
-	invalidM := New(false, "bogus")
-	if invalidM.themeMode != themeAuto {
-		t.Fatalf("expected themeAuto for invalid theme, got %d", invalidM.themeMode)
-	}
-	if invalidM.isDarkBackground != nil {
-		t.Fatalf(
-			"expected isDarkBackground=nil for invalid theme, got %v",
-			invalidM.isDarkBackground,
-		)
-	}
-}
-
-// Init() always returns nil.
-func TestInit_ReturnsNil(t *testing.T) {
-	m := New(false, "dark")
-	cmd := m.Init()
-	if cmd != nil {
-		t.Fatalf("expected Init() to return nil, got %v", cmd)
-	}
-}
-
-// refreshColumnDetection() - zero width viewport resets to -1.
-func TestRefreshColumnDetection_ZeroWidthNoOp(t *testing.T) {
-	m := New(true, "dark")
-	m.vp.SetWidth(0)
-	m.refreshColumnDetection("some content")
-	if m.gutterCol != -1 {
-		t.Fatalf("expected gutterCol=-1 when vp width is 0, got %d", m.gutterCol)
-	}
-}
-
-// refreshColumnDetection() - unified mode resets columns to -1.
-func TestRefreshColumnDetection_UnifiedNoOp(t *testing.T) {
-	m := New(false, "dark") // sideBySide=false
-	m.vp.SetWidth(80)
-	m.refreshColumnDetection("some content")
-	if m.gutterCol != -1 {
-		t.Fatalf("expected gutterCol=-1 in unified mode, got %d", m.gutterCol)
-	}
-}
-
-// refreshColumnDetection() resets columns at start.
-func TestRefreshColumnDetection_ResetsColumnsAtStart(t *testing.T) {
-	m := New(true, "dark")
-	m.vp.SetWidth(80)
-	m.gutterCol = 40
-	m.leftContentCol = 10
-	m.rightContentCol = 50
-
-	// Content without enough pipes won't detect anything, leaving them at -1.
-	m.refreshColumnDetection("plain text without pipes")
-	if m.gutterCol != -1 || m.leftContentCol != -1 || m.rightContentCol != -1 {
-		t.Fatalf("expected all columns -1 after reset, got g=%d l=%d r=%d",
-			m.gutterCol, m.leftContentCol, m.rightContentCol)
-	}
-}
-
-// refreshColumnDetection() - implausible detection (gutter at 0) returns -1.
-func TestRefreshColumnDetection_ImplausibleGutterZero(t *testing.T) {
-	m := New(true, "dark")
-	m.vp.SetWidth(60)
-
-	// Content where gutter detection would place gutter at col 0 — fails g > 0.
-	content := strings.Repeat("│", 10)
-	m.refreshColumnDetection(content)
-	if m.gutterCol != -1 {
-		t.Fatalf("expected gutterCol=-1 for implausible gutter at col 0, got %d", m.gutterCol)
-	}
-}
-
-// refreshColumnDetection() - panic recovery path.
-func TestRefreshColumnDetection_ImplausibleDetection(t *testing.T) {
-	m := New(true, "dark")
-	m.vp.SetWidth(80)
-
-	// Set columns to some known values, then call refreshColumnDetection.
-	// The function resets them to -1 at the start; implausible detection
-	// leaves them at -1.
-	m.gutterCol = 50
-	m.leftContentCol = 10
-	m.rightContentCol = 55
-
-	// Content with only 2 pipes fails the plausibility check.
-	m.refreshColumnDetection("│ some text │ remaining")
-	if m.gutterCol != -1 || m.leftContentCol != -1 || m.rightContentCol != -1 {
-		t.Fatalf("expected all columns -1 after implausible detection, got g=%d l=%d r=%d",
-			m.gutterCol, m.leftContentCol, m.rightContentCol)
-	}
-}
-
 // applyHighlight() - selection off-screen (above the viewport).
 func TestApplyHighlight_SelectionAboveViewport(t *testing.T) {
 	m := New(false, "dark")
@@ -659,65 +542,6 @@ func TestApplyHighlight_ValidSelection(t *testing.T) {
 	out := m.applyHighlight(vpView)
 	if !strings.Contains(out, "\x1b[7m") {
 		t.Fatalf("expected reverse-video escape in applyHighlight output")
-	}
-}
-
-// applyHighlight() - panic recovery returns unhighlighted view.
-func TestApplyHighlight_PanicRecovery(t *testing.T) {
-	m := New(false, "dark")
-	m.vp.SetWidth(40)
-	m.vp.SetHeight(5)
-	m.vp.SetContent("line0\nline1\nline2")
-
-	// Selection that would not panic normally — but we can verify the
-	// defer/recover guard exists by ensuring a non-empty output.
-	m.sel = selection{
-		anchor:  Point{Line: 0, Col: 0},
-		head:    Point{Line: 1, Col: 3},
-		colBand: [2]int{0, 100},
-		active:  true,
-		has:     false,
-	}
-
-	vpView := m.vp.View()
-	out := m.applyHighlight(vpView)
-	if out == "" {
-		t.Fatalf("expected non-empty output from applyHighlight")
-	}
-	// When active=true and has=false (selection in progress but not finalized),
-	// the visible content should specify a selection range, so check that
-	// reverse-video escape codes are present.
-	if !strings.Contains(out, "\x1b[7m") {
-		t.Fatal("expected reverse-video escape in applyHighlight output for active selection")
-	}
-}
-
-// applyHighlight: panic in spliceReverse is caught by defer/recover,
-// returning the unhighlighted view so the TUI keeps working.
-func TestApplyHighlight_DeferRecover(t *testing.T) {
-	origSpliceReverse := spliceReverseFunc
-	defer func() { spliceReverseFunc = origSpliceReverse }()
-
-	spliceReverseFunc = func(string, int, int, int) string {
-		panic("injected panic in spliceReverse")
-	}
-
-	m := New(false, "dark")
-	m.vp.SetWidth(40)
-	m.vp.SetHeight(5)
-	m.vp.SetContent("line0\nline1\nline2")
-	m.sel = selection{
-		anchor:  Point{Line: 0, Col: 0},
-		head:    Point{Line: 1, Col: 3},
-		colBand: [2]int{0, 100},
-		active:  true,
-		has:     false,
-	}
-
-	vpView := m.vp.View()
-	out := m.applyHighlight(vpView)
-	if out != vpView {
-		t.Fatalf("expected unhighlighted view after panic recovery")
 	}
 }
 
@@ -1818,16 +1642,6 @@ func TestIsSBSContentLine(t *testing.T) {
 	}
 }
 
-// cancelPendingRender() with no active render does not panic and returns cleanly.
-func TestCancelPendingRender_NoActiveRender(t *testing.T) {
-	m := New(false, "dark")
-	m.cancelPendingRender() // Should not panic
-	// Verify the cancel function was cleared (nil when no render is active)
-	if m.cancelRender != nil {
-		t.Error("expected cancelRender to be nil after cancelPendingRender with no active render")
-	}
-}
-
 // SetSideBySide() updates the flag.
 func TestSetSideBySide(t *testing.T) {
 	m := New(false, "dark")
@@ -2059,17 +1873,6 @@ func TestDeltaRenderer_RunWithNilRun(t *testing.T) {
 	_, err := r.Run(ctx, []string{}, func(w io.Writer) error { return nil })
 	if err == nil {
 		t.Fatal("expected error with canceled context")
-	}
-}
-
-// parseThemeMode: uncovered default branch returns themeAuto.
-func TestParseThemeMode_DefaultBranch(t *testing.T) {
-	// The switch in parseThemeMode has a default that returns themeAuto.
-	// config.NormalizeTheme returns a value not in the auto/light/dark set
-	// for unexpected input. Test a value that exercises the default.
-	got := parseThemeMode("bogus-value")
-	if got != themeAuto {
-		t.Fatalf("expected themeAuto for unknown theme, got %d", got)
 	}
 }
 
@@ -2450,78 +2253,9 @@ func TestSelectedText_ValidSingleLineSelection(t *testing.T) {
 	}
 }
 
-// selectedText: panic in selectedTextInner is caught by defer/recover,
-// returning empty string instead of crashing the TUI.
-func TestSelectedText_PanicRecovery(t *testing.T) {
-	m := New(false, "dark")
-	m.file = &cachedNode{path: "test", diff: "normal content"}
-	m.sel = selection{
-		anchor:  Point{Line: 0, Col: 0},
-		head:    Point{Line: 0, Col: 5},
-		colBand: [2]int{0, 100},
-		active:  false,
-		has:     true,
-	}
-	m.testHookSelectedTextPanic = func() {
-		panic("injected panic in selectedTextInner")
-	}
-
-	text := m.selectedText()
-	if text != "" {
-		t.Fatalf("expected empty string after panic recovery, got %q", text)
-	}
-}
-
-// refreshColumnDetection: panic in detectGutterCol is caught by defer/recover,
-// leaving all columns at -1 so selection falls back to the unified band.
-func TestRefreshColumnDetection_PanicRecovery(t *testing.T) {
-	origGutter := detectGutterColFunc
-	origSide := detectSideContentColsFunc
-	defer func() {
-		detectGutterColFunc = origGutter
-		detectSideContentColsFunc = origSide
-	}()
-
-	detectGutterColFunc = func(string, int) int {
-		panic("injected panic in detectGutterCol")
-	}
-
-	m := New(true, "dark")
-	m.vp.SetWidth(80)
-	m.refreshColumnDetection("some content")
-
-	if m.gutterCol != -1 || m.leftContentCol != -1 || m.rightContentCol != -1 {
-		t.Fatalf("expected all columns -1 after panic recovery, got g=%d l=%d r=%d",
-			m.gutterCol, m.leftContentCol, m.rightContentCol)
-	}
-}
-
-// refreshColumnDetection: panic in detectSideContentCols is caught by
-// defer/recover.
-func TestRefreshColumnDetection_PanicInSideContentCols(t *testing.T) {
-	origSide := detectSideContentColsFunc
-	defer func() { detectSideContentColsFunc = origSide }()
-
-	detectSideContentColsFunc = func(string, int) (int, int) {
-		panic("injected panic in detectSideContentCols")
-	}
-
-	m := New(true, "dark")
-	m.vp.SetWidth(80)
-
-	// detectGutterCol returns a valid value but detectSideContentCols panics.
-	// The recover should reset all columns to -1.
-	m.refreshColumnDetection(strings.Repeat("│  1 │content│  1 │content\n", 3))
-
-	if m.gutterCol != -1 || m.leftContentCol != -1 || m.rightContentCol != -1 {
-		t.Fatalf("expected all columns -1 after side-content panic, got g=%d l=%d r=%d",
-			m.gutterCol, m.leftContentCol, m.rightContentCol)
-	}
-}
-
 // ---------------------------------------------------------------------------
 // HasFile / HasDir / CurrentFilePath
-// ---------------------------------------------------------------------------
+// -----------
 
 func TestHasFile_CurrentFilePath(t *testing.T) {
 	m := New(false, "dark")

@@ -1,6 +1,7 @@
 package filenode
 
 import (
+	"image/color"
 	"strings"
 	"testing"
 
@@ -62,43 +63,79 @@ func defaultCfg() config.Config {
 	}
 }
 
+func makeFileForStatus(status string, fragments [2]int64) *gitdiff.File {
+	var opts []func(*gitdiff.File)
+	switch status {
+	case "new":
+		opts = append(opts, withIsNew)
+	case "deleted":
+		opts = append(opts, withIsDelete)
+	}
+	if fragments[0] > 0 || fragments[1] > 0 {
+		opts = append(opts, withFragments(fragments[0], fragments[1]))
+	}
+	return newFile(opts...)
+}
+
 // --- GetFileName ---
 
-func TestGetFileName_NewName(t *testing.T) {
-	f := &gitdiff.File{NewName: "added.go", OldName: "old.go"}
-	if got := GetFileName(f); got != "added.go" {
-		t.Errorf("GetFileName() = %q, want %q", got, "added.go")
+func TestGetFileName(t *testing.T) {
+	tests := []struct {
+		name string
+		file *gitdiff.File
+		want string
+	}{
+		{
+			name: "new name takes priority",
+			file: &gitdiff.File{NewName: "added.go", OldName: "old.go"},
+			want: "added.go",
+		},
+		{
+			name: "old name fallback",
+			file: &gitdiff.File{NewName: "", OldName: "old.go"},
+			want: "old.go",
+		},
+		{
+			name: "both empty",
+			file: &gitdiff.File{},
+			want: "",
+		},
 	}
-}
-
-func TestGetFileName_OldNameFallback(t *testing.T) {
-	f := &gitdiff.File{NewName: "", OldName: "old.go"}
-	if got := GetFileName(f); got != "old.go" {
-		t.Errorf("GetFileName() = %q, want %q", got, "old.go")
-	}
-}
-
-func TestGetFileName_BothEmpty(t *testing.T) {
-	f := &gitdiff.File{}
-	if got := GetFileName(f); got != "" {
-		t.Errorf("GetFileName() = %q, want empty string", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := GetFileName(tt.file); got != tt.want {
+				t.Errorf("GetFileName() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
 // --- FileNode.Path() ---
 
-func TestPath_DelegatesToGetFileName(t *testing.T) {
-	fn := makeFileNode(newFile(withIsNew), defaultCfg())
-	if got := fn.Path(); got != "new.txt" {
-		t.Errorf("Path() = %q, want %q", got, "new.txt")
+func TestPath(t *testing.T) {
+	tests := []struct {
+		name string
+		file *gitdiff.File
+		want string
+	}{
+		{
+			name: "delegates to GetFileName with new name",
+			file: newFile(withIsNew),
+			want: "new.txt",
+		},
+		{
+			name: "old name fallback",
+			file: &gitdiff.File{OldName: "legacy.go"},
+			want: "legacy.go",
+		},
 	}
-}
-
-func TestPath_OldNameFallback(t *testing.T) {
-	f := &gitdiff.File{OldName: "legacy.go"}
-	fn := makeFileNode(f, defaultCfg())
-	if got := fn.Path(); got != "legacy.go" {
-		t.Errorf("Path() = %q, want %q", got, "legacy.go")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fn := makeFileNode(tt.file, defaultCfg())
+			if got := fn.Path(); got != tt.want {
+				t.Errorf("Path() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -130,194 +167,114 @@ func TestIconStyleConstants(t *testing.T) {
 
 // --- StatusColor ---
 
-func TestStatusColor_New(t *testing.T) {
-	fn := makeFileNode(newFile(withIsNew), defaultCfg())
-	if fn.StatusColor() != lipgloss.Green {
-		t.Error("StatusColor() for new file should be Green")
+func TestStatusColor(t *testing.T) {
+	tests := []struct {
+		name      string
+		file      *gitdiff.File
+		wantColor color.Color
+	}{
+		{name: "new", file: newFile(withIsNew), wantColor: lipgloss.Green},
+		{name: "deleted", file: newFile(withIsDelete), wantColor: lipgloss.Red},
+		{name: "modified", file: newFile(), wantColor: lipgloss.Yellow},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fn := makeFileNode(tt.file, defaultCfg())
+			if got := fn.StatusColor(); got != tt.wantColor {
+				t.Errorf("StatusColor() = %v, want %v", got, tt.wantColor)
+			}
+		})
 	}
 }
 
-func TestStatusColor_Deleted(t *testing.T) {
-	fn := makeFileNode(newFile(withIsDelete), defaultCfg())
-	if fn.StatusColor() != lipgloss.Red {
-		t.Error("StatusColor() for deleted file should be Red")
+// --- getIcon ---
+
+func TestGetIcon(t *testing.T) {
+	tests := []struct {
+		name         string
+		style        string
+		status       string // "new", "deleted", "modified"
+		filename     string // optional, overrides default NewName
+		wantIcon     string
+		wantNonEmpty bool // when true, just assert the icon is non-empty
+	}{
+		// nerd-fonts-status
+		{name: "nerd-status new", style: IconsNerdStatus, status: "new", wantIcon: "\uf457"},
+		{
+			name:     "nerd-status deleted",
+			style:    IconsNerdStatus,
+			status:   "deleted",
+			wantIcon: "\ueadf",
+		},
+		{
+			name:     "nerd-status modified",
+			style:    IconsNerdStatus,
+			status:   "modified",
+			wantIcon: "\uf459",
+		},
+		// nerd-fonts-simple
+		{name: "nerd-simple new", style: IconsNerdSimple, status: "new", wantIcon: "\uf4a5"},
+		// nerd-fonts-filetype
+		{
+			name:         "nerd-filetype",
+			style:        IconsNerdFiletype,
+			status:       "new",
+			filename:     "main.go",
+			wantNonEmpty: true,
+		},
+		// unicode
+		{name: "unicode new", style: IconsUnicode, status: "new", wantIcon: "+"},
+		{name: "unicode deleted", style: IconsUnicode, status: "deleted", wantIcon: "⛌"},
+		{name: "unicode modified", style: IconsUnicode, status: "modified", wantIcon: "●"},
+		// ascii
+		{name: "ascii new", style: IconsASCII, status: "new", wantIcon: "+"},
+		{name: "ascii deleted", style: IconsASCII, status: "deleted", wantIcon: "x"},
+		{name: "ascii modified", style: IconsASCII, status: "modified", wantIcon: "*"},
+		// unknown style falls back to ASCII
+		{name: "unknown new", style: "unknown-style", status: "new", wantIcon: "+"},
+		{name: "unknown deleted", style: "unknown-style", status: "deleted", wantIcon: "x"},
+		{name: "unknown modified", style: "unknown-style", status: "modified", wantIcon: "*"},
 	}
-}
-
-func TestStatusColor_Modified(t *testing.T) {
-	fn := makeFileNode(newFile(), defaultCfg()) // neither new nor delete
-	if fn.StatusColor() != lipgloss.Yellow {
-		t.Error("StatusColor() for modified file should be Yellow")
-	}
-}
-
-// --- getIcon: nerd-fonts-status ---
-
-func TestGetIcon_NerdStatus_New(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsNerdStatus
-	fn := makeFileNode(newFile(withIsNew), cfg)
-	icon := fn.getIcon()
-	if icon != "\uf457" {
-		t.Errorf("getIcon() nerd-fonts-status new = %q, want %q", icon, "\uf457")
-	}
-}
-
-func TestGetIcon_NerdStatus_Deleted(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsNerdStatus
-	fn := makeFileNode(newFile(withIsDelete), cfg)
-	icon := fn.getIcon()
-	if icon != "\ueadf" {
-		t.Errorf("getIcon() nerd-fonts-status deleted = %q, want %q", icon, "\ueadf")
-	}
-}
-
-func TestGetIcon_NerdStatus_Modified(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsNerdStatus
-	fn := makeFileNode(newFile(), cfg)
-	icon := fn.getIcon()
-	if icon != "\uf459" {
-		t.Errorf("getIcon() nerd-fonts-status modified = %q, want %q", icon, "\uf459")
-	}
-}
-
-// --- getIcon: nerd-fonts-simple ---
-
-func TestGetIcon_NerdSimple(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsNerdSimple
-	fn := makeFileNode(newFile(withIsNew), cfg)
-	icon := fn.getIcon()
-	if icon != "\uf4a5" {
-		t.Errorf("getIcon() nerd-fonts-simple = %q, want %q", icon, "\uf4a5")
-	}
-}
-
-// --- getIcon: nerd-fonts-filetype ---
-
-func TestGetIcon_NerdFiletype(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsNerdFiletype
-	file := newFile(func(f *gitdiff.File) { f.NewName = "main.go" })
-	fn := makeFileNode(file, cfg)
-	icon := fn.getIcon()
-	if icon == "" {
-		t.Error("getIcon() nerd-fonts-filetype returned empty")
-	}
-}
-
-// --- getIcon: unicode ---
-
-func TestGetIcon_Unicode_New(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsUnicode
-	fn := makeFileNode(newFile(withIsNew), cfg)
-	if got := fn.getIcon(); got != "+" {
-		t.Errorf("getIcon() unicode new = %q, want %q", got, "+")
-	}
-}
-
-func TestGetIcon_Unicode_Deleted(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsUnicode
-	fn := makeFileNode(newFile(withIsDelete), cfg)
-	if got := fn.getIcon(); got != "⛌" {
-		t.Errorf("getIcon() unicode deleted = %q, want %q", got, "⛌")
-	}
-}
-
-func TestGetIcon_Unicode_Modified(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsUnicode
-	fn := makeFileNode(newFile(), cfg)
-	if got := fn.getIcon(); got != "●" {
-		t.Errorf("getIcon() unicode modified = %q, want %q", got, "●")
-	}
-}
-
-// --- getIcon: ascii (default) ---
-
-func TestGetIcon_ASCII_New(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsASCII
-	fn := makeFileNode(newFile(withIsNew), cfg)
-	if got := fn.getIcon(); got != "+" {
-		t.Errorf("getIcon() ASCII new = %q, want %q", got, "+")
-	}
-}
-
-func TestGetIcon_ASCII_Deleted(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsASCII
-	fn := makeFileNode(newFile(withIsDelete), cfg)
-	if got := fn.getIcon(); got != "x" {
-		t.Errorf("getIcon() ASCII deleted = %q, want %q", got, "x")
-	}
-}
-
-func TestGetIcon_ASCII_Modified(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsASCII
-	fn := makeFileNode(newFile(), cfg)
-	if got := fn.getIcon(); got != "*" {
-		t.Errorf("getIcon() ASCII modified = %q, want %q", got, "*")
-	}
-}
-
-// --- getIcon: unknown style falls back to ASCII default ---
-
-func TestGetIcon_UnknownStyle_New(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = "unknown-style"
-	fn := makeFileNode(newFile(withIsNew), cfg)
-	if got := fn.getIcon(); got != "+" {
-		t.Errorf("getIcon() unknown style new = %q, want %q", got, "+")
-	}
-}
-
-func TestGetIcon_UnknownStyle_Deleted(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = "unknown-style"
-	fn := makeFileNode(newFile(withIsDelete), cfg)
-	if got := fn.getIcon(); got != "x" {
-		t.Errorf("getIcon() unknown style deleted = %q, want %q", got, "x")
-	}
-}
-
-func TestGetIcon_UnknownStyle_Modified(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = "unknown-style"
-	fn := makeFileNode(newFile(), cfg)
-	if got := fn.getIcon(); got != "*" {
-		t.Errorf("getIcon() unknown style modified = %q, want %q", got, "*")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := defaultCfg()
+			cfg.UI.Icons = tt.style
+			file := makeFileForStatus(tt.status, [2]int64{})
+			if tt.filename != "" {
+				file.NewName = tt.filename
+			}
+			fn := makeFileNode(file, cfg)
+			got := fn.getIcon()
+			if tt.wantNonEmpty {
+				if got == "" {
+					t.Errorf("getIcon() returned empty, want non-empty")
+				}
+			} else if got != tt.wantIcon {
+				t.Errorf("getIcon() = %q, want %q", got, tt.wantIcon)
+			}
+		})
 	}
 }
 
 // --- getStatusIcon ---
 
-func TestGetStatusIcon_New(t *testing.T) {
-	fn := makeFileNode(newFile(withIsNew), defaultCfg())
-	icon := fn.getStatusIcon()
-	if icon != "\uf457" {
-		t.Errorf("getStatusIcon() new = %q, want %q", icon, "\uf457")
+func TestGetStatusIcon(t *testing.T) {
+	tests := []struct {
+		name     string
+		file     *gitdiff.File
+		wantIcon string
+	}{
+		{name: "new", file: newFile(withIsNew), wantIcon: "\uf457"},
+		{name: "deleted", file: newFile(withIsDelete), wantIcon: "\ueadf"},
+		{name: "modified", file: newFile(), wantIcon: "\uf459"},
 	}
-}
-
-func TestGetStatusIcon_Deleted(t *testing.T) {
-	fn := makeFileNode(newFile(withIsDelete), defaultCfg())
-	icon := fn.getStatusIcon()
-	if icon != "\ueadf" {
-		t.Errorf("getStatusIcon() deleted = %q, want %q", icon, "\ueadf")
-	}
-}
-
-func TestGetStatusIcon_Modified(t *testing.T) {
-	fn := makeFileNode(newFile(), defaultCfg())
-	icon := fn.getStatusIcon()
-	if icon != "\uf459" {
-		t.Errorf("getStatusIcon() modified = %q, want %q", icon, "\uf459")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fn := makeFileNode(tt.file, defaultCfg())
+			if got := fn.getStatusIcon(); got != tt.wantIcon {
+				t.Errorf("getStatusIcon() = %q, want %q", got, tt.wantIcon)
+			}
+		})
 	}
 }
 
@@ -378,274 +335,240 @@ func TestValue_FullLayout(t *testing.T) {
 	}
 }
 
-// --- renderStandardLayout: all branches ---
+// --- renderStandardLayout ---
 
-func TestRenderStandardLayout_NotSelected_Uncolored_NoStats(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsASCII
-	cfg.UI.ColorFileNames = false
-	cfg.UI.ShowDiffStats = false
-	fn := makeFileNode(newFile(withIsNew), cfg)
-	fn.Selected = false
-	result := fn.renderStandardLayout("test.go")
-	if !strings.Contains(result, "test.go") {
-		t.Errorf("renderStandardLayout() = %q, should contain filename", result)
+func TestRenderStandardLayout(t *testing.T) {
+	tests := []struct {
+		name          string
+		status        string
+		selected      bool
+		colored       bool
+		showDiffStats bool
+		fragments     [2]int64
+		depth         int
+		contains      []string
+		notContains   []string
+		diffSelected  bool
+	}{
+		{
+			name:     "not selected uncolored no stats",
+			status:   "new",
+			contains: []string{"test.go", "+"},
+		},
+		{
+			name:     "not selected colored no stats",
+			status:   "new",
+			colored:  true,
+			contains: []string{"test.go", "+"},
+		},
+		{
+			name:         "selected no stats",
+			status:       "new",
+			selected:     true,
+			contains:     []string{"test.go"},
+			diffSelected: true,
+		},
+		{
+			name:          "not selected with diff stats",
+			status:        "new",
+			showDiffStats: true,
+			fragments:     [2]int64{5, 3},
+			contains:      []string{"test.go", "+5", "-3"},
+		},
+		{
+			name:        "not selected without diff stats",
+			status:      "new",
+			fragments:   [2]int64{5, 3},
+			notContains: []string{"+5"},
+		},
+		{
+			name:          "selected with diff stats",
+			status:        "new",
+			selected:      true,
+			showDiffStats: true,
+			fragments:     [2]int64{10, 2},
+			contains:      []string{"test.go", "+10", "-2"},
+		},
+		{
+			name:     "colored selected",
+			status:   "new",
+			selected: true,
+			colored:  true,
+			contains: []string{"test.go"},
+		},
+		{
+			name:     "large depth unselected",
+			status:   "new",
+			depth:    10,
+			contains: []string{"test.go"},
+		},
+		{
+			name:     "large depth selected",
+			status:   "new",
+			selected: true,
+			depth:    10,
+			contains: []string{"test.go"},
+		},
 	}
-	// ASCII icon for new file should be "+"
-	if !strings.Contains(result, "+") {
-		t.Errorf("renderStandardLayout() = %q, should contain '+' icon for new file", result)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := defaultCfg()
+			cfg.UI.Icons = IconsASCII
+			cfg.UI.ColorFileNames = tt.colored
+			cfg.UI.ShowDiffStats = tt.showDiffStats
+			file := makeFileForStatus(tt.status, tt.fragments)
+			fn := makeFileNode(file, cfg)
+			fn.Selected = tt.selected
+			fn.Depth = tt.depth
+			result := fn.renderStandardLayout("test.go")
+			for _, s := range tt.contains {
+				if !strings.Contains(result, s) {
+					t.Errorf("renderStandardLayout() = %q, should contain %q", result, s)
+				}
+			}
+			for _, s := range tt.notContains {
+				if strings.Contains(result, s) {
+					t.Errorf("renderStandardLayout() = %q, should not contain %q", result, s)
+				}
+			}
+			if tt.diffSelected {
+				fn.Selected = false
+				notSelected := fn.renderStandardLayout("test.go")
+				if result == notSelected {
+					t.Errorf("selected and unselected render output should differ")
+				}
+			}
+		})
 	}
 }
 
-func TestRenderStandardLayout_NotSelected_Colored_NoStats(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsASCII
-	cfg.UI.ColorFileNames = true
-	cfg.UI.ShowDiffStats = false
-	fn := makeFileNode(newFile(withIsNew), cfg)
-	fn.Selected = false
-	result := fn.renderStandardLayout("test.go")
-	if !strings.Contains(result, "test.go") {
-		t.Errorf("renderStandardLayout() = %q, should contain filename", result)
-	}
-	// ASCII icon for new file should be "+"
-	if !strings.Contains(result, "+") {
-		t.Errorf("renderStandardLayout() = %q, should contain '+' icon for new file", result)
-	}
-}
+// --- renderFullLayout ---
 
-func TestRenderStandardLayout_Selected_NoStats(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsASCII
-	cfg.UI.ColorFileNames = false
-	cfg.UI.ShowDiffStats = false
-	fn := makeFileNode(newFile(withIsNew), cfg)
-	fn.Selected = true
-	result := fn.renderStandardLayout("test.go")
-	if !strings.Contains(result, "test.go") {
-		t.Errorf("renderStandardLayout() = %q, should contain filename", result)
+func TestRenderFullLayout(t *testing.T) {
+	tests := []struct {
+		name             string
+		status           string
+		selected         bool
+		colored          bool
+		showDiffStats    bool
+		fragments        [2]int64
+		depth            int
+		contains         []string
+		notContains      []string
+		diffSelected     bool
+		diffFromStatuses []string
+	}{
+		{
+			name:     "not selected uncolored no stats",
+			status:   "new",
+			contains: []string{"test.go"},
+		},
+		{
+			name:     "not selected colored no stats",
+			status:   "new",
+			colored:  true,
+			contains: []string{"test.go"},
+		},
+		{
+			name:         "selected no stats",
+			status:       "new",
+			selected:     true,
+			contains:     []string{"test.go"},
+			diffSelected: true,
+		},
+		{
+			name:     "colored selected no stats",
+			status:   "new",
+			selected: true,
+			colored:  true,
+			contains: []string{"test.go"},
+		},
+		{
+			name:          "with diff stats",
+			status:        "new",
+			showDiffStats: true,
+			fragments:     [2]int64{7, 4},
+			contains:      []string{"test.go", "+7", "-4"},
+		},
+		{
+			name:        "without diff stats",
+			status:      "new",
+			fragments:   [2]int64{7, 4},
+			notContains: []string{"+7"},
+		},
+		{
+			name:             "deleted file",
+			status:           "deleted",
+			diffFromStatuses: []string{"new"},
+			contains:         []string{"test.go"},
+		},
+		{
+			name:             "modified file",
+			status:           "modified",
+			diffFromStatuses: []string{"new", "deleted"},
+			contains:         []string{"test.go"},
+		},
+		{
+			name:          "selected with diff stats",
+			status:        "new",
+			selected:      true,
+			showDiffStats: true,
+			fragments:     [2]int64{3, 1},
+			contains:      []string{"+3"},
+		},
+		{
+			name:     "large depth unselected",
+			status:   "new",
+			depth:    10,
+			contains: []string{"test.go"},
+		},
+		{
+			name:     "large depth selected",
+			status:   "new",
+			selected: true,
+			depth:    10,
+			contains: []string{"test.go"},
+		},
 	}
-	// Selected output should differ from non-selected output
-	fn.Selected = false
-	notSelected := fn.renderStandardLayout("test.go")
-	if result == notSelected {
-		t.Errorf("selected and unselected render output should differ")
-	}
-}
-
-func TestRenderStandardLayout_NotSelected_WithDiffStats(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsASCII
-	cfg.UI.ColorFileNames = false
-	cfg.UI.ShowDiffStats = true
-	file := newFile(withIsNew, withFragments(5, 3))
-	fn := makeFileNode(file, cfg)
-	result := fn.renderStandardLayout("test.go")
-	if !strings.Contains(result, "test.go") {
-		t.Errorf("renderStandardLayout() = %q, should contain filename", result)
-	}
-	if !strings.Contains(result, "+5") {
-		t.Errorf("renderStandardLayout() = %q, should contain '+5'", result)
-	}
-	if !strings.Contains(result, "-3") {
-		t.Errorf("renderStandardLayout() = %q, should contain '-3'", result)
-	}
-}
-
-func TestRenderStandardLayout_NotSelected_WithoutDiffStats(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsASCII
-	cfg.UI.ColorFileNames = false
-	cfg.UI.ShowDiffStats = false
-	file := newFile(withIsNew, withFragments(5, 3))
-	fn := makeFileNode(file, cfg)
-	result := fn.renderStandardLayout("test.go")
-	if strings.Contains(result, "+5") {
-		t.Errorf(
-			"renderStandardLayout() = %q, should not contain stats when ShowDiffStats is false",
-			result,
-		)
-	}
-}
-
-func TestRenderStandardLayout_Selected_WithDiffStats(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsASCII
-	cfg.UI.ColorFileNames = false
-	cfg.UI.ShowDiffStats = true
-	file := newFile(withIsNew, withFragments(10, 2))
-	fn := makeFileNode(file, cfg)
-	fn.Selected = true
-	result := fn.renderStandardLayout("test.go")
-	if !strings.Contains(result, "test.go") {
-		t.Errorf("renderStandardLayout() = %q, should contain filename", result)
-	}
-	if !strings.Contains(result, "+10") {
-		t.Errorf("renderStandardLayout() = %q, should contain '+10'", result)
-	}
-	if !strings.Contains(result, "-2") {
-		t.Errorf("renderStandardLayout() = %q, should contain '-2'", result)
-	}
-}
-
-func TestRenderStandardLayout_Colored_Selected(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsASCII
-	cfg.UI.ColorFileNames = true
-	cfg.UI.ShowDiffStats = false
-	fn := makeFileNode(newFile(withIsNew), cfg)
-	fn.Selected = true
-	result := fn.renderStandardLayout("test.go")
-	if !strings.Contains(result, "test.go") {
-		t.Errorf("renderStandardLayout() = %q, should contain filename", result)
-	}
-}
-
-// --- renderFullLayout: all branches ---
-
-func TestRenderFullLayout_NotSelected_Uncolored_NoStats(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsNerdFull
-	cfg.UI.ColorFileNames = false
-	cfg.UI.ShowDiffStats = false
-	fn := makeFileNode(newFile(withIsNew), cfg)
-	fn.Selected = false
-	result := fn.renderFullLayout("test.go")
-	if !strings.Contains(result, "test.go") {
-		t.Errorf("renderFullLayout() = %q, should contain filename", result)
-	}
-}
-
-func TestRenderFullLayout_NotSelected_Colored_NoStats(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsNerdFull
-	cfg.UI.ColorFileNames = true
-	cfg.UI.ShowDiffStats = false
-	fn := makeFileNode(newFile(withIsNew), cfg)
-	fn.Selected = false
-	result := fn.renderFullLayout("test.go")
-	if !strings.Contains(result, "test.go") {
-		t.Errorf("renderFullLayout() = %q, should contain filename", result)
-	}
-}
-
-func TestRenderFullLayout_Selected_NoStats(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsNerdFull
-	cfg.UI.ColorFileNames = false
-	cfg.UI.ShowDiffStats = false
-	fn := makeFileNode(newFile(withIsNew), cfg)
-	fn.Selected = true
-	result := fn.renderFullLayout("test.go")
-	if !strings.Contains(result, "test.go") {
-		t.Errorf("renderFullLayout() = %q, should contain filename", result)
-	}
-	// Selected output should differ from non-selected output
-	fn.Selected = false
-	notSelected := fn.renderFullLayout("test.go")
-	if result == notSelected {
-		t.Errorf("selected and unselected full layout render output should differ")
-	}
-}
-
-func TestRenderFullLayout_Colored_Selected_NoStats(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsNerdFull
-	cfg.UI.ColorFileNames = true
-	cfg.UI.ShowDiffStats = false
-	fn := makeFileNode(newFile(withIsNew), cfg)
-	fn.Selected = true
-	result := fn.renderFullLayout("test.go")
-	if !strings.Contains(result, "test.go") {
-		t.Errorf("renderFullLayout() = %q, should contain filename", result)
-	}
-}
-
-func TestRenderFullLayout_WithDiffStats(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsNerdFull
-	cfg.UI.ColorFileNames = false
-	cfg.UI.ShowDiffStats = true
-	file := newFile(withIsNew, withFragments(7, 4))
-	fn := makeFileNode(file, cfg)
-	result := fn.renderFullLayout("test.go")
-	if !strings.Contains(result, "test.go") {
-		t.Errorf("renderFullLayout() = %q, should contain filename", result)
-	}
-	if !strings.Contains(result, "+7") {
-		t.Errorf("renderFullLayout() = %q, should contain '+7'", result)
-	}
-	if !strings.Contains(result, "-4") {
-		t.Errorf("renderFullLayout() = %q, should contain '-4'", result)
-	}
-}
-
-func TestRenderFullLayout_WithoutDiffStats(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsNerdFull
-	cfg.UI.ColorFileNames = false
-	cfg.UI.ShowDiffStats = false
-	file := newFile(withIsNew, withFragments(7, 4))
-	fn := makeFileNode(file, cfg)
-	result := fn.renderFullLayout("test.go")
-	if strings.Contains(result, "+7") {
-		t.Errorf(
-			"renderFullLayout() = %q, should not contain stats when ShowDiffStats is false",
-			result,
-		)
-	}
-}
-
-func TestRenderFullLayout_DeletedFile(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsNerdFull
-	cfg.UI.ColorFileNames = false
-	cfg.UI.ShowDiffStats = false
-	fn := makeFileNode(newFile(withIsDelete), cfg)
-	result := fn.renderFullLayout("test.go")
-	if !strings.Contains(result, "test.go") {
-		t.Errorf("renderFullLayout() for deleted file = %q, should contain filename", result)
-	}
-	// Deleted file output should differ from new file output
-	fnNew := makeFileNode(newFile(withIsNew), cfg)
-	newResult := fnNew.renderFullLayout("test.go")
-	if result == newResult {
-		t.Errorf("deleted and new file render output should differ")
-	}
-}
-
-func TestRenderFullLayout_ModifiedFile(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsNerdFull
-	cfg.UI.ColorFileNames = false
-	cfg.UI.ShowDiffStats = false
-	fn := makeFileNode(newFile(), cfg)
-	result := fn.renderFullLayout("test.go")
-	if !strings.Contains(result, "test.go") {
-		t.Errorf("renderFullLayout() for modified file = %q, should contain filename", result)
-	}
-	// Modified file output should differ from both new and deleted
-	fnNew := makeFileNode(newFile(withIsNew), cfg)
-	fnDel := makeFileNode(newFile(withIsDelete), cfg)
-	if result == fnNew.renderFullLayout("test.go") {
-		t.Errorf("modified and new file render output should differ")
-	}
-	if result == fnDel.renderFullLayout("test.go") {
-		t.Errorf("modified and deleted file render output should differ")
-	}
-}
-
-func TestRenderFullLayout_Selected_WithDiffStats(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsNerdFull
-	cfg.UI.ColorFileNames = false
-	cfg.UI.ShowDiffStats = true
-	file := newFile(withIsNew, withFragments(3, 1))
-	fn := makeFileNode(file, cfg)
-	fn.Selected = true
-	result := fn.renderFullLayout("test.go")
-	if !strings.Contains(result, "+3") {
-		t.Errorf("renderFullLayout() = %q, should contain '+3'", result)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := defaultCfg()
+			cfg.UI.Icons = IconsNerdFull
+			cfg.UI.ColorFileNames = tt.colored
+			cfg.UI.ShowDiffStats = tt.showDiffStats
+			file := makeFileForStatus(tt.status, tt.fragments)
+			fn := makeFileNode(file, cfg)
+			fn.Selected = tt.selected
+			fn.Depth = tt.depth
+			result := fn.renderFullLayout("test.go")
+			for _, s := range tt.contains {
+				if !strings.Contains(result, s) {
+					t.Errorf("renderFullLayout() = %q, should contain %q", result, s)
+				}
+			}
+			for _, s := range tt.notContains {
+				if strings.Contains(result, s) {
+					t.Errorf("renderFullLayout() = %q, should not contain %q", result, s)
+				}
+			}
+			if tt.diffSelected {
+				fn.Selected = false
+				notSelected := fn.renderFullLayout("test.go")
+				if result == notSelected {
+					t.Errorf("selected and unselected full layout render output should differ")
+				}
+			}
+			for _, otherStatus := range tt.diffFromStatuses {
+				otherFile := makeFileForStatus(otherStatus, [2]int64{})
+				otherFn := makeFileNode(otherFile, cfg)
+				otherFn.Selected = tt.selected
+				otherFn.Depth = tt.depth
+				otherResult := otherFn.renderFullLayout("test.go")
+				if result == otherResult {
+					t.Errorf("renderFullLayout() output should differ from %q status", otherStatus)
+				}
+			}
+		})
 	}
 }
 
@@ -932,68 +855,6 @@ func TestValue_DepthExceedsPanelWidth_FullLayout_NotSelected(t *testing.T) {
 	if fn.Value() == "" {
 		t.Fatal(
 			"expected non-empty Value() when depth exceeds panel width full layout not selected",
-		)
-	}
-}
-
-func TestRenderStandardLayout_LargeDepth_Unselected(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsASCII
-	cfg.UI.ColorFileNames = false
-	cfg.UI.ShowDiffStats = false
-	fn := makeFileNode(newFile(withIsNew), cfg)
-	fn.Depth = 10
-	fn.Selected = false
-	result := fn.renderStandardLayout("test.go")
-	if !strings.Contains(result, "test.go") {
-		t.Errorf("renderStandardLayout() with large depth = %q, should contain filename", result)
-	}
-}
-
-func TestRenderStandardLayout_LargeDepth_Selected(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsASCII
-	cfg.UI.ColorFileNames = false
-	cfg.UI.ShowDiffStats = false
-	fn := makeFileNode(newFile(withIsNew), cfg)
-	fn.Depth = 10
-	fn.Selected = true
-	result := fn.renderStandardLayout("test.go")
-	if !strings.Contains(result, "test.go") {
-		t.Errorf(
-			"renderStandardLayout() selected with large depth = %q, should contain filename",
-			result,
-		)
-	}
-}
-
-func TestRenderFullLayout_LargeDepth_Unselected(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsNerdFull
-	cfg.UI.ColorFileNames = false
-	cfg.UI.ShowDiffStats = false
-	fn := makeFileNode(newFile(withIsNew), cfg)
-	fn.Depth = 10
-	fn.Selected = false
-	result := fn.renderFullLayout("test.go")
-	if !strings.Contains(result, "test.go") {
-		t.Errorf("renderFullLayout() with large depth = %q, should contain filename", result)
-	}
-}
-
-func TestRenderFullLayout_LargeDepth_Selected(t *testing.T) {
-	cfg := defaultCfg()
-	cfg.UI.Icons = IconsNerdFull
-	cfg.UI.ColorFileNames = false
-	cfg.UI.ShowDiffStats = false
-	fn := makeFileNode(newFile(withIsNew), cfg)
-	fn.Depth = 10
-	fn.Selected = true
-	result := fn.renderFullLayout("test.go")
-	if !strings.Contains(result, "test.go") {
-		t.Errorf(
-			"renderFullLayout() selected with large depth = %q, should contain filename",
-			result,
 		)
 	}
 }

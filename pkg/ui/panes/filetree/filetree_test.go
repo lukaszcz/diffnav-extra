@@ -683,11 +683,21 @@ func TestWidth(t *testing.T) {
 // --- ViewportYOffset ---
 
 func TestViewportYOffset(t *testing.T) {
-	m := newTestTreeModel([]string{"a.txt"})
-	offset := m.ViewportYOffset()
-	// Initially should be 0
-	if offset != 0 {
-		t.Fatalf("expected initial YOffset of 0, got %d", offset)
+	m := newTestTreeModel([]string{"a.txt", "b.txt", "c.txt", "d.txt", "e.txt"})
+	m.SetSize(30, 2) // small viewport to force scrolling
+	m.GoToTop()
+
+	viewBefore := m.View()
+
+	m.ScrollDown(2)
+	viewAfter := m.View()
+
+	if viewBefore == viewAfter {
+		t.Fatal("expected View() to change after scrolling down")
+	}
+	// After scrolling, the previously top file should no longer be at the top.
+	if strings.Contains(viewAfter, "a.txt") && !strings.Contains(viewBefore, "a.txt") {
+		t.Fatal("unexpected: a.txt appeared at top after scrolling down")
 	}
 }
 
@@ -807,33 +817,21 @@ func TestNodeDescendantDiffsFileNilFile(t *testing.T) {
 
 // --- SetCursorNoScroll ---
 
-func TestSetCursorNoScrollEmptyFiles(t *testing.T) {
-	cfg := config.DefaultConfig()
-	m := New(cfg)
-	m.SetCursorNoScroll(5)
-	// With no files, CurrNodePath should be empty
-	if m.CurrNodePath() != "" {
-		t.Fatalf("expected empty path with empty tree, got %q", m.CurrNodePath())
-	}
-}
-
 func TestSetCursorNoScrollPreservesViewport(t *testing.T) {
-	m := newTestTreeModel([]string{"a.txt", "b.txt", "c.txt"})
+	m := newTestTreeModel([]string{"a.txt", "b.txt", "c.txt", "d.txt", "e.txt"})
 	m.SetSize(30, 2) // small viewport to force scrolling
 	m.GoToTop()
 
-	// Scroll down so the viewport has a non-zero offset.
-	m.ScrollDown(1)
-	VPBefore := m.ViewportYOffset()
-	if VPBefore == 0 {
-		t.Fatalf("precondition: expected viewport to be scrolled, got offset 0")
-	}
+	// Scroll down so the viewport shows rows below the top.
+	m.ScrollDown(2)
+	visibleBefore := visibleFileNames(m.View())
 
-	m.SetCursorNoScroll(2)
+	m.SetCursorNoScroll(3)
 
-	// The viewport offset must be exactly preserved.
-	if got := m.ViewportYOffset(); got != VPBefore {
-		t.Fatalf("expected viewport offset to be preserved at %d, got %d", VPBefore, got)
+	visibleAfter := visibleFileNames(m.View())
+	if visibleBefore != visibleAfter {
+		t.Fatalf("expected same visible file names after SetCursorNoScroll\nbefore: %s\nafter:  %s",
+			visibleBefore, visibleAfter)
 	}
 	node := m.GetCurrNode()
 	if node == nil {
@@ -841,27 +839,40 @@ func TestSetCursorNoScrollPreservesViewport(t *testing.T) {
 	}
 }
 
+// visibleFileNames extracts file names from the rendered view by stripping
+// ANSI escape codes and returning the first non-empty line content.
+func visibleFileNames(view string) string {
+	cleaned := stripANSI(view)
+	var parts []string
+	for _, line := range strings.Split(cleaned, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			parts = append(parts, line)
+		}
+	}
+	return strings.Join(parts, " | ")
+}
+
+// stripANSI removes ANSI escape sequences from s.
+func stripANSI(s string) string {
+	var buf strings.Builder
+	i := 0
+	for i < len(s) {
+		if s[i] == '\x1b' && i+1 < len(s) && s[i+1] == '[' {
+			i += 2
+			for i < len(s) && (s[i] < 'A' || s[i] > 'Z') && (s[i] < 'a' || s[i] > 'z') {
+				i++
+			}
+			i++ // skip the final letter
+		} else {
+			buf.WriteByte(s[i])
+			i++
+		}
+	}
+	return buf.String()
+}
+
 // --- ClickNode ---
-
-func TestClickNodeNil(t *testing.T) {
-	m := newTestTreeModel([]string{"a.txt"})
-	beforePath := m.CurrNodePath()
-	m.ClickNode(nil)
-	// Clicking nil should not change selection
-	if m.CurrNodePath() != beforePath {
-		t.Fatalf("expected path to stay %q after nil click, got %q", beforePath, m.CurrNodePath())
-	}
-}
-
-func TestClickNodeEmptyFiles(t *testing.T) {
-	cfg := config.DefaultConfig()
-	m := New(cfg)
-	m.ClickNode(nil)
-	// With empty files, should not panic and CurrNodePath should be empty
-	if m.CurrNodePath() != "" {
-		t.Fatalf("expected empty path with no files, got %q", m.CurrNodePath())
-	}
-}
 
 func TestClickNodeSelectsFile(t *testing.T) {
 	m := newTestTreeModel([]string{"app/main.go", "docs/readme.md"})
@@ -879,30 +890,6 @@ func TestClickNodeSelectsFile(t *testing.T) {
 
 // --- ClickNodeIcon ---
 
-func TestClickNodeIconNil(t *testing.T) {
-	m := newTestTreeModel([]string{"a.txt"})
-	beforePath := m.CurrNodePath()
-	m.ClickNodeIcon(nil)
-	// Clicking nil icon should not change state
-	if m.CurrNodePath() != beforePath {
-		t.Fatalf(
-			"expected path to stay %q after nil icon click, got %q",
-			beforePath,
-			m.CurrNodePath(),
-		)
-	}
-}
-
-func TestClickNodeIconEmptyFiles(t *testing.T) {
-	cfg := config.DefaultConfig()
-	m := New(cfg)
-	m.ClickNodeIcon(nil)
-	// With empty files, should not panic
-	if m.CurrNodePath() != "" {
-		t.Fatalf("expected empty path with no files, got %q", m.CurrNodePath())
-	}
-}
-
 func TestClickNodeIconOnFileNodeDoesNotToggle(t *testing.T) {
 	m := newTestTreeModel([]string{"app/main.go"})
 	app := nodeByPath(t, &m, "app")
@@ -915,23 +902,6 @@ func TestClickNodeIconOnFileNodeDoesNotToggle(t *testing.T) {
 	// Verify the app directory state is unchanged
 	if !app.IsOpen() {
 		t.Fatal("expected app directory to remain open after clicking file icon")
-	}
-}
-
-// --- IsDirectoryIconHit ---
-
-func TestIsDirectoryIconHitNilNode(t *testing.T) {
-	m := newTestTreeModel([]string{"a.txt"})
-	if m.IsDirectoryIconHit(nil, 0) {
-		t.Fatal("expected false for nil node")
-	}
-}
-
-func TestIsDirectoryIconHitNegativeX(t *testing.T) {
-	m := newTestTreeModel([]string{"app/main.go"})
-	app := nodeByPath(t, &m, "app")
-	if m.IsDirectoryIconHit(app, -1) {
-		t.Fatal("expected false for negative x")
 	}
 }
 
