@@ -1431,3 +1431,74 @@ func TestCollapseTree_NonDirNodeRoot(t *testing.T) {
 		t.Fatal("expected collapseTree to return the input unchanged for non-DirNode root")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Empty/nil model robustness
+// ---------------------------------------------------------------------------
+
+func TestSetCursorNoScrollEmptyModelIsNoOp(t *testing.T) {
+	cfg := config.DefaultConfig()
+	m := New(cfg)
+
+	// With no files, SetCursorNoScroll should be a no-op and not panic.
+	m.SetCursorNoScroll(5)
+
+	view := m.View()
+	if len(view) > 0 && view != "\n" {
+		t.Fatalf("expected empty view after SetCursorNoScroll on empty model, got %q", view)
+	}
+}
+
+func TestClickNodeNilNodeIsNoOp(t *testing.T) {
+	m := newTestTreeModel([]string{"app/main.go", "docs/readme.md"})
+
+	m.SetCursorByPath("app/main.go")
+	pathBefore := m.CurrNodePath()
+
+	m.ClickNode(nil)
+
+	pathAfter := m.CurrNodePath()
+	if pathAfter != pathBefore {
+		t.Fatalf("expected path unchanged after ClickNode(nil), got before=%q after=%q",
+			pathBefore, pathAfter)
+	}
+}
+
+func TestClickNodeEmptyModelIsNoOp(t *testing.T) {
+	cfg := config.DefaultConfig()
+	m := New(cfg)
+
+	m.ClickNode(nil)
+
+	view := m.View()
+	if len(view) > 0 && view != "\n" {
+		t.Fatalf("expected empty view after ClickNode on empty model, got %q", view)
+	}
+}
+
+func TestClickNodeIconNilNodeIsNoOp(t *testing.T) {
+	m := newTestTreeModel([]string{"app/main.go", "docs/readme.md"})
+
+	m.SetCursorByPath("app")
+	pathBefore := m.CurrNodePath()
+
+	m.ClickNodeIcon(nil)
+
+	pathAfter := m.CurrNodePath()
+	if pathAfter != pathBefore {
+		t.Fatalf("expected path unchanged after ClickNodeIcon(nil), got before=%q after=%q",
+			pathBefore, pathAfter)
+	}
+}
+
+func TestClickNodeIconEmptyModelIsNoOp(t *testing.T) {
+	cfg := config.DefaultConfig()
+	m := New(cfg)
+
+	m.ClickNodeIcon(nil)
+
+	view := m.View()
+	if len(view) > 0 && view != "\n" {
+		t.Fatalf("expected empty view after ClickNodeIcon on empty model, got %q", view)
+	}
+}
