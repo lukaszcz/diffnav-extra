@@ -9,7 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 	zone "github.com/lrstanley/bubblezone/v2"
 
-	"github.com/dlvhdr/diffnav/pkg/config"
+	"github.com/lukaszcz/diffnav-extra/pkg/config"
 )
 
 // sidebarWidthFromView extracts the sidebar width from the rendered View

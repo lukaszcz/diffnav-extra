@@ -16,7 +16,7 @@ import (
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/dlvhdr/diffnav/pkg/ui/common"
+	"github.com/lukaszcz/diffnav-extra/pkg/ui/common"
 )
 
 func TestUpdateIgnoresStaleDiffContentMsg(t *testing.T) {

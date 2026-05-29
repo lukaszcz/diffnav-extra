@@ -7,7 +7,7 @@ import (
 
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
 
-	"github.com/dlvhdr/diffnav/pkg/filenode"
+	"github.com/lukaszcz/diffnav-extra/pkg/filenode"
 )
 
 func FuzzRelativeTime(f *testing.F) {

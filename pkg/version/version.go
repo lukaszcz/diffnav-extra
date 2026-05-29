@@ -10,7 +10,7 @@ var Version = "devel"
 // production code should never reassign it.
 var readBuildInfo = debug.ReadBuildInfo
 
-// A user may install diffnav using `go install github.com/dlvhdr/diffnav@latest`.
+// A user may install diffnav using `go install github.com/lukaszcz/diffnav-extra@latest`.
 // without -ldflags, in which case the version above is unset. As a workaround
 // we use the embedded build version that *is* set when using `go install` (and
 // is only set for `go install` and not for `go build`).

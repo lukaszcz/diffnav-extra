@@ -9,7 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	zone "github.com/lrstanley/bubblezone/v2"
 
-	"github.com/dlvhdr/diffnav/pkg/ui/panes/diffviewer"
+	"github.com/lukaszcz/diffnav-extra/pkg/ui/panes/diffviewer"
 )
 
 // TestRightSideSelectionEndToEnd drives the full mouse pipeline against a

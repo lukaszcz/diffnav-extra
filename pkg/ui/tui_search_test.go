@@ -7,7 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
 
-	"github.com/dlvhdr/diffnav/pkg/ui/common"
+	"github.com/lukaszcz/diffnav-extra/pkg/ui/common"
 )
 
 // typeSearchChars types each character of text through Update while in

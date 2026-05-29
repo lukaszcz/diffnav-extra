@@ -12,12 +12,12 @@ import (
 
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
 
-	"github.com/dlvhdr/diffnav/pkg/config"
-	"github.com/dlvhdr/diffnav/pkg/constants"
-	"github.com/dlvhdr/diffnav/pkg/dirnode"
-	"github.com/dlvhdr/diffnav/pkg/filenode"
-	"github.com/dlvhdr/diffnav/pkg/ui/common"
-	"github.com/dlvhdr/diffnav/pkg/utils"
+	"github.com/lukaszcz/diffnav-extra/pkg/config"
+	"github.com/lukaszcz/diffnav-extra/pkg/constants"
+	"github.com/lukaszcz/diffnav-extra/pkg/dirnode"
+	"github.com/lukaszcz/diffnav-extra/pkg/filenode"
+	"github.com/lukaszcz/diffnav-extra/pkg/ui/common"
+	"github.com/lukaszcz/diffnav-extra/pkg/utils"
 )
 
 type Model struct {

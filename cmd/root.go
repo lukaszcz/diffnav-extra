@@ -21,10 +21,10 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	zone "github.com/lrstanley/bubblezone/v2"
 
-	"github.com/dlvhdr/diffnav/pkg/config"
-	"github.com/dlvhdr/diffnav/pkg/ui"
-	"github.com/dlvhdr/diffnav/pkg/version"
-	"github.com/dlvhdr/diffnav/pkg/watch"
+	"github.com/lukaszcz/diffnav-extra/pkg/config"
+	"github.com/lukaszcz/diffnav-extra/pkg/ui"
+	"github.com/lukaszcz/diffnav-extra/pkg/version"
+	"github.com/lukaszcz/diffnav-extra/pkg/watch"
 )
 
 //go:embed logo-diff-part.txt

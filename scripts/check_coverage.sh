@@ -7,7 +7,7 @@
 set -euo pipefail
 
 # Run tests with coverage for all testable packages.
-# The root package (github.com/dlvhdr/diffnav) is excluded because main()
+# The root package (github.com/lukaszcz/diffnav-extra) is excluded because main()
 # cannot be covered by the test framework (it calls os.Exit via cmd.Execute).
 # A test file exists in the root package to verify compilation, but 0%
 # coverage is expected and acceptable for the main() function.

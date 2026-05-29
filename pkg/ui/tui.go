@@ -20,17 +20,17 @@ import (
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
 	zone "github.com/lrstanley/bubblezone/v2"
 
-	"github.com/dlvhdr/diffnav/pkg/config"
-	"github.com/dlvhdr/diffnav/pkg/dirnode"
-	"github.com/dlvhdr/diffnav/pkg/filenode"
-	"github.com/dlvhdr/diffnav/pkg/ui/common"
-	"github.com/dlvhdr/diffnav/pkg/ui/panes/diffviewer"
-	"github.com/dlvhdr/diffnav/pkg/ui/panes/filetree"
-	"github.com/dlvhdr/diffnav/pkg/ui/panes/help"
-	"github.com/dlvhdr/diffnav/pkg/utils"
-	"github.com/dlvhdr/diffnav/pkg/watch"
 	"github.com/lrstanley/go-nf/glyphs/md"
 	"github.com/lrstanley/go-nf/glyphs/neo"
+	"github.com/lukaszcz/diffnav-extra/pkg/config"
+	"github.com/lukaszcz/diffnav-extra/pkg/dirnode"
+	"github.com/lukaszcz/diffnav-extra/pkg/filenode"
+	"github.com/lukaszcz/diffnav-extra/pkg/ui/common"
+	"github.com/lukaszcz/diffnav-extra/pkg/ui/panes/diffviewer"
+	"github.com/lukaszcz/diffnav-extra/pkg/ui/panes/filetree"
+	"github.com/lukaszcz/diffnav-extra/pkg/ui/panes/help"
+	"github.com/lukaszcz/diffnav-extra/pkg/utils"
+	"github.com/lukaszcz/diffnav-extra/pkg/watch"
 )
 
 const (

@@ -9,9 +9,9 @@ import (
 	"charm.land/lipgloss/v2/tree"
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
 
-	"github.com/dlvhdr/diffnav/pkg/config"
-	"github.com/dlvhdr/diffnav/pkg/icons"
-	"github.com/dlvhdr/diffnav/pkg/utils"
+	"github.com/lukaszcz/diffnav-extra/pkg/config"
+	"github.com/lukaszcz/diffnav-extra/pkg/icons"
+	"github.com/lukaszcz/diffnav-extra/pkg/utils"
 )
 
 // Icon style constants.

@@ -10,7 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	zone "github.com/lrstanley/bubblezone/v2"
 
-	"github.com/dlvhdr/diffnav/pkg/config"
+	"github.com/lukaszcz/diffnav-extra/pkg/config"
 )
 
 // Diff-scroll keys (ctrl+up/down, pgup/pgdown) must scroll the diff pane

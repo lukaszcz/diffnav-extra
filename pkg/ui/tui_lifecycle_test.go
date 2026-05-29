@@ -12,8 +12,8 @@ import (
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
 	zone "github.com/lrstanley/bubblezone/v2"
 
-	"github.com/dlvhdr/diffnav/pkg/config"
-	"github.com/dlvhdr/diffnav/pkg/ui/common"
+	"github.com/lukaszcz/diffnav-extra/pkg/config"
+	"github.com/lukaszcz/diffnav-extra/pkg/ui/common"
 )
 
 func TestBackgroundColorDetectionStillWorksWhileSearching(t *testing.T) {

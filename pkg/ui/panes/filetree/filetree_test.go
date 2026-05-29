@@ -8,10 +8,10 @@ import (
 	"charm.land/bubbles/v2/tree"
 	tea "charm.land/bubbletea/v2"
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
-	"github.com/dlvhdr/diffnav/pkg/config"
-	"github.com/dlvhdr/diffnav/pkg/constants"
-	"github.com/dlvhdr/diffnav/pkg/dirnode"
-	"github.com/dlvhdr/diffnav/pkg/filenode"
+	"github.com/lukaszcz/diffnav-extra/pkg/config"
+	"github.com/lukaszcz/diffnav-extra/pkg/constants"
+	"github.com/lukaszcz/diffnav-extra/pkg/dirnode"
+	"github.com/lukaszcz/diffnav-extra/pkg/filenode"
 )
 
 func TestClickDirectoryRowSelectsOnly(t *testing.T) {

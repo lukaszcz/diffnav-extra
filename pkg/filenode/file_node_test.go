@@ -8,7 +8,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
 
-	"github.com/dlvhdr/diffnav/pkg/config"
+	"github.com/lukaszcz/diffnav-extra/pkg/config"
 )
 
 // --- Helper constructors ---

@@ -11,7 +11,7 @@ import (
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
 	zone "github.com/lrstanley/bubblezone/v2"
 
-	"github.com/dlvhdr/diffnav/pkg/config"
+	"github.com/lukaszcz/diffnav-extra/pkg/config"
 )
 
 // newTestMainModel creates a mainModel populated with the standard

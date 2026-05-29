@@ -19,11 +19,11 @@ import (
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/dlvhdr/diffnav/pkg/config"
-	"github.com/dlvhdr/diffnav/pkg/filenode"
-	"github.com/dlvhdr/diffnav/pkg/icons"
-	"github.com/dlvhdr/diffnav/pkg/ui/common"
-	"github.com/dlvhdr/diffnav/pkg/utils"
+	"github.com/lukaszcz/diffnav-extra/pkg/config"
+	"github.com/lukaszcz/diffnav-extra/pkg/filenode"
+	"github.com/lukaszcz/diffnav-extra/pkg/icons"
+	"github.com/lukaszcz/diffnav-extra/pkg/ui/common"
+	"github.com/lukaszcz/diffnav-extra/pkg/utils"
 )
 
 // DirHeaderHeight is the height of the header band rendered above the

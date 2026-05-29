@@ -12,9 +12,9 @@ import (
 	zone "github.com/lrstanley/bubblezone/v2"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/dlvhdr/diffnav/pkg/config"
-	"github.com/dlvhdr/diffnav/pkg/filenode"
-	"github.com/dlvhdr/diffnav/pkg/ui/panes/diffviewer"
+	"github.com/lukaszcz/diffnav-extra/pkg/config"
+	"github.com/lukaszcz/diffnav-extra/pkg/filenode"
+	"github.com/lukaszcz/diffnav-extra/pkg/ui/panes/diffviewer"
 )
 
 func TestUpdateOverlayToggle(t *testing.T) {

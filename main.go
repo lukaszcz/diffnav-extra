@@ -1,6 +1,6 @@
 package main
 
-import "github.com/dlvhdr/diffnav/cmd"
+import "github.com/lukaszcz/diffnav-extra/cmd"
 
 func main() {
 	cmd.Execute()

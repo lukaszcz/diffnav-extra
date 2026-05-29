@@ -18,7 +18,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/dlvhdr/diffnav/pkg/config"
+	"github.com/lukaszcz/diffnav-extra/pkg/config"
 )
 
 // ---------------------------------------------------------------------------

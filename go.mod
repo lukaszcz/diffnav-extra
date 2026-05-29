@@ -1,4 +1,4 @@
-module github.com/dlvhdr/diffnav
+module github.com/lukaszcz/diffnav-extra
 
 go 1.25.8
 
