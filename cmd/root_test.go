@@ -16,6 +16,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/dlvhdr/diffnav/pkg/config"
 )
@@ -88,6 +89,17 @@ func TestRootCommandVersionTemplate(t *testing.T) {
 
 func TestFlagChangedDetection(t *testing.T) {
 	flags := rootCmd.Flags()
+	// Save and restore the flag's Changed state to avoid polluting other tests.
+	wasChanged := flags.Changed("watch-cmd")
+	defer func() {
+		if !wasChanged {
+			flags.Visit(func(f *pflag.Flag) {
+				if f.Name == "watch-cmd" {
+					f.Changed = false
+				}
+			})
+		}
+	}()
 	if err := flags.Set("watch-cmd", "custom-cmd"); err != nil {
 		t.Fatalf("failed to set watch-cmd flag: %v", err)
 	}

@@ -217,11 +217,16 @@ func TestRenderScrollbarNewlineCount(t *testing.T) {
 // --- styles.go tests ---
 
 func TestKeyConstants(t *testing.T) {
-	if Selected != 0 {
-		t.Errorf("expected Selected = 0, got %d", Selected)
-	}
-	if DarkerSelected != 1 {
-		t.Errorf("expected DarkerSelected = 1, got %d", DarkerSelected)
+	// Verify that every defined Key constant has a corresponding Colors and
+	// BgStyles entry, ensuring the mapping is complete.
+	allKeys := []Key{Selected, DarkerSelected}
+	for _, k := range allKeys {
+		if _, ok := Colors[k]; !ok {
+			t.Errorf("Colors map missing key %v", k)
+		}
+		if _, ok := BgStyles[k]; !ok {
+			t.Errorf("BgStyles map missing key %v", k)
+		}
 	}
 }
 

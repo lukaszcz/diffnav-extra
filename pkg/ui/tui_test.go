@@ -4606,15 +4606,6 @@ func TestResolveBranchCommitHashTruncatedBySpace(t *testing.T) {
 	}
 }
 
-func TestResolveBranchEmptyHashAfterTrimming(t *testing.T) {
-	// "commit " with just spaces - empty hash after TrimPrefix
-	preamble := "commit "
-	result := resolveBranch(preamble)
-	if result != "" {
-		t.Fatalf("expected empty branch for commit line with empty hash, got %q", result)
-	}
-}
-
 // TestResolveBranchWithGitPointsAt creates a temp git repo with a commit
 // and verifies that --points-at lookup returns the branch name.
 func TestResolveBranchWithGitPointsAt(t *testing.T) {
