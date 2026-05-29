@@ -3941,10 +3941,12 @@ func TestResolveBranchWithCommitLineAndRef(t *testing.T) {
 
 func TestResolveBranchOnlyTag(t *testing.T) {
 	preamble := "commit abc (tag: v1.0)"
-	// No HEAD -> prefix, falls through to git CLI with short hash "abc"
+	// No HEAD -> prefix, falls through to git CLI with short hash "abc".
+	// Since "abc" is not a real commit, git branch --points-at will fail
+	// and resolveBranch should return empty string.
 	result := resolveBranch(preamble)
-	if strings.Contains(result, " ") || strings.Contains(result, "\n") {
-		t.Fatalf("expected valid branch name or empty, got %q", result)
+	if result != "" {
+		t.Fatalf("expected empty branch for non-existent hash with only tag, got %q", result)
 	}
 }
 
