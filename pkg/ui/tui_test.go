@@ -6801,8 +6801,8 @@ func TestUpdateBackgroundDetectionDiffViewerReturnsCmd(t *testing.T) {
 }
 
 func TestResolveBranchCommitWithOnlySpaces(t *testing.T) {
-	// Commit line with only whitespace as the hash.
-	preamble := "commit /t /n"
+	// Commit line with only whitespace as the hash (actual tab and space characters).
+	preamble := "commit \t "
 	result := resolveBranch(preamble)
 	if result != "" {
 		t.Fatalf("expected empty branch for whitespace-only hash, got %q", result)
