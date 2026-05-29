@@ -7,8 +7,10 @@
 set -euo pipefail
 
 # Run tests with coverage for all testable packages.
-# The root package (github.com/dlvhdr/diffnav) is excluded because it has no
-# test files and triggers a covdata tool error under Go 1.25.
+# The root package (github.com/dlvhdr/diffnav) is excluded because main()
+# cannot be covered by the test framework (it calls os.Exit via cmd.Execute).
+# A test file exists in the root package to verify compilation, but 0%
+# coverage is expected and acceptable for the main() function.
 output=$(go test -count=1 -cover ./pkg/... ./cmd/... 2>&1)
 
 fail=0
