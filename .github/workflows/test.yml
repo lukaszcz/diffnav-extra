@@ -15,3 +15,6 @@ jobs:
 
       - name: Test
         run: go test -v ./...
+
+      - name: Coverage
+        run: bash scripts/check_coverage.sh
