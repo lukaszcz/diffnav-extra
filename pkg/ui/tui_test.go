@@ -2670,10 +2670,19 @@ func TestUpdateEscapeClearsSelection(t *testing.T) {
 	m := newTestMainModel(t)
 	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 40})
 
-	// When no selection, escape should just be a no-op (not quit or error)
+	// Create a finalized selection by starting, extending head, and ending it.
+	m.diffViewer.SetContent(strings.Repeat("line content\n", 500))
+	m.diffViewer.StartSelection(diffviewer.Point{Line: 0, Col: 0})
+	m.diffViewer.ExtendSelection(diffviewer.Point{Line: 5, Col: 4})
+	m.diffViewer.EndSelection()
+	if !m.diffViewer.HasSelection() {
+		t.Fatal("expected finalized selection before Escape")
+	}
+
 	m = updateMainModel(t, m, tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
-	// Should not quit — just clear any non-existent selection
-	_ = m
+	if m.diffViewer.HasSelection() {
+		t.Fatal("expected selection to be cleared after Escape")
+	}
 }
 
 func TestUpdateQuitClosesOverlayFirst(t *testing.T) {
@@ -3144,8 +3153,13 @@ func TestWindowResizeWhileMessageOpenUpdatesVp(t *testing.T) {
 	m.preamble = "commit abc\nAuthor: Test\n\nSubject"
 	m.messageOpen = true
 
+	prevHeight := m.messageVp.Height()
+
 	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 80, Height: 30})
-	// Should not panic; updateMessageVp should be called during resize
+	// After resize, messageVp height should be updated to reflect the new window size.
+	if m.messageVp.Height() == prevHeight {
+		t.Fatal("expected messageVp height to change after window resize")
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -5991,9 +6005,16 @@ func TestUpdateOpenInEditorWithEditorSet(t *testing.T) {
 
 	t.Setenv("EDITOR", "true")
 
-	m = updateMainModel(t, m, tea.KeyPressMsg(tea.Key{Text: "o", Code: 'o'}))
-	// The command should be non-nil since EDITOR is set
-	_ = m
+	// Press 'o' to open in editor; the handler should return a non-nil command.
+	updated, cmd := m.Update(tea.KeyPressMsg(tea.Key{Text: "o", Code: 'o'}))
+	result, ok := updated.(mainModel)
+	if !ok {
+		t.Fatalf("unexpected model type %T", updated)
+	}
+	if cmd == nil {
+		t.Fatal("expected non-nil command when EDITOR is set and 'o' is pressed")
+	}
+	_ = result
 }
 
 // ---------------------------------------------------------------------------
@@ -6181,7 +6202,15 @@ func TestHandleSearchResultClickIndexExceedsFiltered(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	_ = result
+	// When clickedIndex >= len(filtered), the handler should return early
+	// without changing the cursor or closing search.
+	if result.resultsCursor != m.resultsCursor {
+		t.Errorf(
+			"expected resultsCursor unchanged (%d), got %d",
+			m.resultsCursor,
+			result.resultsCursor,
+		)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -6227,7 +6256,10 @@ func TestHandleDiffSelectionMotionZeroZone(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", result)
 	}
-	_ = m2
+	// With a zero zone, the function should return early without updating selection head.
+	if !m2.diffViewer.IsSelecting() {
+		t.Fatal("expected selection to remain active after zero-zone motion")
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -6258,7 +6290,10 @@ func TestHandleDiffSelectionMotionClampX(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	_ = result
+	// Selection head should have been updated to reflect the motion.
+	if !result.diffViewer.IsSelecting() {
+		t.Fatal("expected selection to still be active after motion")
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -6287,7 +6322,11 @@ func TestHandleDiffSelectionMotionDiffPanePointFails(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	_ = result
+	// When diffPanePoint returns !ok, the function returns early without
+	// modifying selection state. Selection should still be active.
+	if !result.diffViewer.IsSelecting() {
+		t.Fatal("expected selection to remain active after diffPanePoint failure")
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -6629,8 +6668,15 @@ func TestHandleSearchResultClickScrolledPastResults(t *testing.T) {
 	if !ok {
 		t.Fatalf("unexpected model type %T", updated)
 	}
-	// Should return early without selecting any file
-	_ = result
+	// Should return early without selecting any file.
+	// resultsCursor must remain at the same position it had before the click.
+	if result.resultsCursor != m.resultsCursor {
+		t.Errorf(
+			"expected resultsCursor unchanged (%d), got %d",
+			m.resultsCursor,
+			result.resultsCursor,
+		)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -6727,26 +6773,26 @@ func TestEditorDone(t *testing.T) {
 }
 
 func TestHandleDiffSelectionMotionZoneIsZero(t *testing.T) {
-	// This tests the case when.zone.Get(zoneDiffViewer) returns a zero zone.
-	// Since the zone manager is global and shared across tests, previous
-	// tests may have registered the zone. To properly test this branch,
-	// we need to create a model that hasn't rendered View() yet and where
-	// no other test has registered zoneDiffViewer.
-	//
-	// Since we can't reliably control global zone state, we test the
-	// NOT selecting case, which gates the entire function.
+	// Test the zero-zone branch by overriding getDiffViewerZone to return a
+	// zero ZoneInfo, simulating what happens when zone.Get returns an
+	// unregistered zone.
 	m := newTestMainModel(t)
 	m = updateMainModel(t, m, tea.WindowSizeMsg{Width: 100, Height: 40})
-	// NOT calling StartSelection so IsSelecting() is false.
+	m.diffViewer.StartSelection(diffviewer.Point{Line: 0, Col: 0})
+
+	origGetZone := getDiffViewerZone
+	defer func() { getDiffViewerZone = origGetZone }()
+	getDiffViewerZone = func() *zone.ZoneInfo { return &zone.ZoneInfo{} } // zero zone
+
 	msg := tea.MouseMotionMsg(tea.Mouse{X: 50, Y: 10})
 	result, cmd := m.handleDiffSelectionMotion(msg)
-	// With no selection active, the function should return the model unchanged
 	resultModel, ok := result.(mainModel)
 	if !ok {
 		t.Fatalf("unexpected model type %T", result)
 	}
-	if resultModel.diffViewer.IsSelecting() {
-		t.Fatal("expected no selection to be active")
+	// With a zero zone, the function should return early without updating selection head.
+	if !resultModel.diffViewer.IsSelecting() {
+		t.Fatal("expected selection to remain active after zero-zone motion")
 	}
 	_ = cmd
 }

@@ -260,8 +260,22 @@ func TestBuildConfigWatch(t *testing.T) {
 
 func TestSetupLoggingNonDebug(t *testing.T) {
 	t.Setenv("DEBUG", "false")
+
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(origDir)
+
 	cleanup := setupLogging()
-	// In non-debug mode, cleanup is a no-op; calling it twice must not panic.
+
+	// In non-debug mode, no debug.log file should be created.
+	if _, err := os.Stat("debug.log"); !os.IsNotExist(err) {
+		t.Fatal("expected debug.log to NOT exist in non-debug mode")
+	}
+
+	// Cleanup is a no-op; calling it twice must not panic.
 	cleanup()
 	cleanup()
 }
@@ -1026,23 +1040,40 @@ func TestCloseTTYDifferentFiles(t *testing.T) {
 func TestCloseTTYSameFileCloseError(t *testing.T) {
 	f, _, _ := os.Pipe()
 
+	callCount := 0
 	origCloseFile := closeFile
 	defer func() { closeFile = origCloseFile }()
-	closeFile = func(f *os.File) error { return fmt.Errorf("close error") }
+	closeFile = func(f *os.File) error {
+		callCount++
+		return fmt.Errorf("close error")
+	}
 
-	// Capture log output
 	closeTTY(f, f)
+
+	// When both files are the same, closeFile should be called once.
+	if callCount != 1 {
+		t.Fatalf("expected closeFile called once, got %d", callCount)
+	}
 }
 
 func TestCloseTTYDifferentFilesCloseError(t *testing.T) {
 	ttyIn, _, _ := os.Pipe()
 	_, ttyOut, _ := os.Pipe()
 
+	callCount := 0
 	origCloseFile := closeFile
 	defer func() { closeFile = origCloseFile }()
-	closeFile = func(f *os.File) error { return fmt.Errorf("close error") }
+	closeFile = func(f *os.File) error {
+		callCount++
+		return fmt.Errorf("close error")
+	}
 
 	closeTTY(ttyIn, ttyOut)
+
+	// When two different files are passed, closeFile should be called twice.
+	if callCount != 2 {
+		t.Fatalf("expected closeFile called twice, got %d", callCount)
+	}
 }
 
 func TestRunProgramProgramRunError(t *testing.T) {

@@ -50,8 +50,13 @@ func FuzzClampToViewportWidth(f *testing.F) {
 		if vpWidth > 0 && result >= vpWidth {
 			t.Errorf("clampToViewportWidth(%d, %d) = %d, should be < vpWidth", x, vpWidth, result)
 		}
-		if result < 0 {
-			t.Errorf("clampToViewportWidth(%d, %d) = %d, should be >= 0", x, vpWidth, result)
+		if vpWidth > 0 && result < 0 {
+			t.Errorf(
+				"clampToViewportWidth(%d, %d) = %d, should be >= 0 when vpWidth > 0",
+				x,
+				vpWidth,
+				result,
+			)
 		}
 		if vpWidth <= 0 && result != x {
 			t.Errorf(
